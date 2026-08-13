@@ -1,0 +1,84 @@
+<!-- ═══ Customer Add/Edit Modal ═══ -->
+<div class="modal-overlay" id="customerModalOverlay">
+  <div class="modal" id="customerModal">
+    <div class="modal-header">
+      <h3 id="customerModalTitle">إضافة عميل جديد</h3>
+      <button class="modal-close" id="customerModalClose" aria-label="إغلاق">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <form id="customerForm">
+      <input type="hidden" id="customerEditId" value="">
+
+      <div class="modal-body">
+        <!-- اسم العميل (cf_t1) – Required -->
+        <div class="form-group">
+          <label for="custName">اسم العميل <span class="required">*</span></label>
+          <input type="text" id="custName" class="form-input" placeholder="أدخل اسم العميل" required>
+        </div>
+
+        <div class="form-row">
+          <!-- المحافظة (cf_t2) -->
+          <div class="form-group">
+            <label for="custGovernorate">المحافظة</label>
+            <input type="text" id="custGovernorate" class="form-input" placeholder="المحافظة">
+          </div>
+          <!-- المدينة (cf_t3) -->
+          <div class="form-group">
+            <label for="custCity">المدينة</label>
+            <input type="text" id="custCity" class="form-input" placeholder="المدينة">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <!-- رقم الجوال (cf_t5) -->
+          <div class="form-group">
+            <label for="custMobile">رقم الجوال</label>
+            <input type="text" id="custMobile" class="form-input" placeholder="07xxxxxxxxx" dir="ltr">
+          </div>
+          <!-- كود المندوب (cf_n1) -->
+          <div class="form-group">
+            <label for="custAgentId">كود مندوب المبيعات</label>
+            <input type="number" id="custAgentId" class="form-input" placeholder="رقم المندوب" min="0">
+          </div>
+        </div>
+
+        <!-- ملاحظات (cf_t4) -->
+        <div class="form-group">
+          <label for="custNotes">ملاحظات</label>
+          <textarea id="custNotes" class="form-input form-textarea" rows="3" placeholder="ملاحظات إضافية (اختياري)"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-cancel" id="customerModalCancel">إلغاء</button>
+        <button type="submit" class="btn-primary btn-save" id="customerSaveBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          حفظ
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ Delete Confirmation Modal ═══ -->
+<div class="modal-overlay" id="deleteModalOverlay">
+  <div class="modal modal-sm">
+    <div class="modal-header modal-header-danger">
+      <h3>تأكيد الحذف</h3>
+    </div>
+    <div class="modal-body">
+      <p class="delete-msg">هل أنت متأكد من حذف العميل <strong id="deleteCustomerName"></strong>؟</p>
+      <p class="delete-warning">لا يمكن التراجع عن هذا الإجراء.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" id="deleteCancelBtn">إلغاء</button>
+      <button class="btn-danger" id="deleteConfirmBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        حذف
+      </button>
+    </div>
+  </div>
+</div>

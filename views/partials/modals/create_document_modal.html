@@ -1,0 +1,94 @@
+<!-- ═══ Create New Sales Document Modal ═══ -->
+<div class="modal-overlay" id="createDocModalOverlay">
+  <div class="modal" id="createDocModal" style="max-width: 600px;">
+    <div class="modal-header">
+      <h3>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          style="margin-left: 8px; vertical-align: middle; color: var(--accent-light);">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="12" y1="18" x2="12" y2="12" />
+          <line x1="9" y1="15" x2="15" y2="15" />
+        </svg>
+        إضافة مستند مبيعات جديد
+      </h3>
+      <button class="modal-close" id="createDocModalClose" aria-label="إغلاق">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+    <form id="createDocForm">
+      <div class="modal-body">
+        <div class="form-row">
+          <!-- نوع المستند -->
+          <div class="form-group">
+            <label for="createDocCat">نوع المستند <span class="required">*</span></label>
+            <select id="createDocCat" class="form-input" required>
+              <option value="5">فاتورة مبيعات</option>
+              <option value="30">حافز مبيعات</option>
+              <option value="14">مردودات مبيعات</option>
+              <option value="29">هدايا مبيعات</option>
+              <option value="120">عينات ومزايا</option>
+            </select>
+          </div>
+
+          <!-- تاريخ المستند -->
+          <div class="form-group">
+            <label for="createDocDate">تاريخ المستند <span class="required">*</span></label>
+            <input type="date" id="createDocDate" class="form-input" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <!-- اسم العميل -->
+          <div class="form-group">
+            <label for="createDocCustomer">اسم العميل <span class="required">*</span></label>
+            <input type="text" id="createDocCustomer" class="form-input" placeholder="أدخل اسم العميل" required>
+          </div>
+
+          <!-- المبلغ الإجمالي -->
+          <div class="form-group">
+            <label for="createDocAmount">إجمالي المبلغ (د.ع / ج.م) <span class="required">*</span></label>
+            <input type="number" id="createDocAmount" class="form-input" step="0.01" min="0" placeholder="0.00" required
+              dir="ltr">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <!-- المخزن -->
+          <div class="form-group">
+            <label for="createDocStock">المخزن</label>
+            <input type="text" id="createDocStock" class="form-input" placeholder="اسم المخزن (اختياري)">
+          </div>
+
+          <!-- المندوب -->
+          <div class="form-group">
+            <label for="createDocAgent">المندوب</label>
+            <input type="text" id="createDocAgent" class="form-input" placeholder="اسم المندوب (اختياري)">
+          </div>
+        </div>
+
+        <!-- ملاحظات -->
+        <div class="form-group">
+          <label for="createDocNotes">ملاحظات المستند</label>
+          <textarea id="createDocNotes" class="form-input form-textarea" rows="3"
+            placeholder="أدخل أي ملاحظات إضافية حول المستند…"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-cancel" id="createDocModalCancel">إلغاء</button>
+        <button type="submit" class="btn-primary btn-save" id="createDocSaveBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+          </svg>
+          حفظ المستند
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

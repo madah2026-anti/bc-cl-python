@@ -1,0 +1,60 @@
+<!-- ═══ Document Details Modal ═══ -->
+<div class="modal-overlay" id="documentModalOverlay">
+  <div class="modal-card modal-lg">
+    <div class="modal-header">
+      <div class="modal-title-group" style="display: flex; align-items: center; gap: 12px;">
+        <h3 id="docModalTitle">تفاصيل المستند</h3>
+        <span id="docModalCatBadge" class="badge-cat" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;">–</span>
+      </div>
+      <button class="btn-close-modal" id="btnCloseDocModal" title="إغلاق">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- Header Info Grid (1- cash_cat_name, 2- cash_ser & cash_date, 3- cash_cv_name & cash_agent_name, 4- cash_notes) -->
+      <div class="doc-header-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 16px; margin-bottom: 20px;">
+        <div class="doc-info-item">
+          <span class="info-label" style="font-size: 0.8rem; color: var(--text-muted, #94a3b8); display: block; margin-bottom: 4px;">رقم المستند</span>
+          <span class="info-val font-bold" id="docModalSer" style="font-size: 1.1rem; color: #38bdf8;">–</span>
+        </div>
+        <div class="doc-info-item">
+          <span class="info-label" style="font-size: 0.8rem; color: var(--text-muted, #94a3b8); display: block; margin-bottom: 4px;">تاريخ المستند</span>
+          <span class="info-val" id="docModalDate" dir="ltr" style="text-align: right; display: inline-block; font-size: 0.95rem;">–</span>
+        </div>
+        <div class="doc-info-item">
+          <span class="info-label" style="font-size: 0.8rem; color: var(--text-muted, #94a3b8); display: block; margin-bottom: 4px;">اسم العميل</span>
+          <span class="info-val font-bold" id="docModalCustomer" style="font-size: 0.95rem;">–</span>
+        </div>
+        <div class="doc-info-item">
+          <span class="info-label" style="font-size: 0.8rem; color: var(--text-muted, #94a3b8); display: block; margin-bottom: 4px;">اسم المندوب</span>
+          <span class="info-val" id="docModalAgent" style="font-size: 0.95rem;">–</span>
+        </div>
+        <div class="doc-info-item" style="grid-column: 1 / -1;">
+          <span class="info-label" style="font-size: 0.8rem; color: var(--text-muted, #94a3b8); display: block; margin-bottom: 4px;">الملاحظات</span>
+          <span class="info-val" id="docModalNotes" style="font-size: 0.9rem; color: #cbd5e1;">–</span>
+        </div>
+      </div>
+
+      <!-- Line Items Section -->
+      <h4 style="margin-bottom: 12px; font-size: 1rem; color: #f8fafc;">اصناف المستند (التفاصيل)</h4>
+      <div class="table-wrapper">
+        <table class="data-table" id="docItemsTable">
+          <thead>
+            <tr>
+              <th>كود الصنف</th>
+              <th>اسم الصنف</th>
+              <th>الوحدة</th>
+              <th>الكمية</th>
+              <th>السعر</th>
+              <th>الإجمالي</th>
+            </tr>
+          </thead>
+          <tbody id="docItemsTableBody">
+            <tr>
+              <td colspan="6" class="table-loading">جاري تحميل الاصناف…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
