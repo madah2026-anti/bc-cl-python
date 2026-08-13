@@ -58,7 +58,6 @@ export async function openDocumentDetailsView(cashSer) {
   const catBadge = document.getElementById('docViewCatBadge');
   const itemsTableBody = document.getElementById('docViewItemsTableBody');
 
-  // New layout elements
   const elSer = document.getElementById('cash_ser');
   const elDate = document.getElementById('cash_date');
   const elCvName = document.getElementById('cash_cv_name');
@@ -77,7 +76,7 @@ export async function openDocumentDetailsView(cashSer) {
   if (elSer) elSer.textContent = String(cashSer);
   const resetEls = [elDate, elCvName, elCvId, elStockName, elStockId, elAgentName, elAgentId, elPayMethod, elNotes, elGrossAmount, elDiscount, elAmount];
   resetEls.forEach(el => { if (el) el.textContent = '–'; });
-  if (itemsTableBody) itemsTableBody.innerHTML = '<tr><td colspan="6" class="table-loading">جاري تحميل اصناف المستند…</td></tr>';
+  if (itemsTableBody) itemsTableBody.innerHTML = '<tr><td colspan="6" class="table-loading">جاري تحميل أصناف المستند…</td></tr>';
 
   try {
     const res = await fetch(`/api/sales/document/${cashSer}`);
@@ -92,11 +91,11 @@ export async function openDocumentDetailsView(cashSer) {
     if (elSer) elSer.textContent = String(header.cash_ser || '–');
     if (elDate) elDate.textContent = header.cash_date ? new Date(header.cash_date).toLocaleDateString('ar-SA') : '–';
     if (elCvName) elCvName.textContent = header.cash_cv_name || '–';
-    if (elCvId) elCvId.textContent = header.cash_cv_id || '–';
+    if (elCvId) elCvId.textContent = header.cash_cv_id ? String(header.cash_cv_id) : '–';
     if (elStockName) elStockName.textContent = header.cash_stock_name || '–';
-    if (elStockId) elStockId.textContent = header.cash_stock_id || '–';
+    if (elStockId) elStockId.textContent = header.cash_stock_id ? String(header.cash_stock_id) : '–';
     if (elAgentName) elAgentName.textContent = header.cash_agent_name || '–';
-    if (elAgentId) elAgentId.textContent = header.cash_agent_id || '–';
+    if (elAgentId) elAgentId.textContent = header.cash_agent_id ? String(header.cash_agent_id) : '–';
     if (elPayMethod) elPayMethod.textContent = header.cash_pay_method || '–';
     if (elNotes) elNotes.textContent = header.cash_notes || '–';
 
@@ -110,7 +109,7 @@ export async function openDocumentDetailsView(cashSer) {
 
     if (itemsTableBody) {
       if (items.length === 0) {
-        itemsTableBody.innerHTML = '<tr><td colspan="6" class="table-empty">لا توجد اصناف مسجلة لهذا المستند</td></tr>';
+        itemsTableBody.innerHTML = '<tr><td colspan="6" class="table-empty">لا توجد أصناف مسجلة لهذا المستند</td></tr>';
       } else {
         itemsTableBody.innerHTML = items.map(item => {
           const qtyFormatted = item.item_qty != null ? Number(item.item_qty).toLocaleString('ar-SA') : '0';
@@ -133,7 +132,7 @@ export async function openDocumentDetailsView(cashSer) {
   } catch (err) {
     console.error('Error opening document details view:', err);
     if (itemsTableBody) {
-      itemsTableBody.innerHTML = '<tr><td colspan="6" class="table-empty">خطأ في تحميل اصناف المستند</td></tr>';
+      itemsTableBody.innerHTML = '<tr><td colspan="6" class="table-empty">خطأ في تحميل أصناف المستند</td></tr>';
     }
   }
 }
@@ -228,17 +227,7 @@ export function initSalesModule() {
     }
   });
 
-  // Listener on #SalesDocCat change event (document delegation)
-  document.addEventListener('change', (e) => {
-    if (e.target && (e.target.id === 'SalesDocCat' || e.target.name === 'SalesDocCat')) {
-      const selectedCat = e.target.value;
-      const searchInput = document.getElementById('salesDocumentSearch');
-      const search = searchInput ? searchInput.value.trim() : '';
-      loadSalesDocuments(search, selectedCat);
-    }
-  });
-
-  // Direct element listener as fallback
+  // Listener on #SalesDocCat change event
   if (salesDocCatSelect) {
     salesDocCatSelect.addEventListener('change', () => {
       const selectedCat = salesDocCatSelect.value;
@@ -266,14 +255,6 @@ export function initSalesModule() {
   const btnBackToSales = document.getElementById('btnBackToSales');
   if (btnBackToSales) {
     btnBackToSales.addEventListener('click', () => showSalesOverview());
-  }
-
-  // Back from doc details → return to main overview list
-  const btnBackFromDocDetails = document.getElementById('btnBackFromDocDetails');
-  if (btnBackFromDocDetails) {
-    btnBackFromDocDetails.addEventListener('click', () => {
-      showSalesOverview();
-    });
   }
 
   // "إضافة مستند" buttons → open in-page create view

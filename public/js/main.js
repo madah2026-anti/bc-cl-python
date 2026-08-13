@@ -18,8 +18,7 @@ function initApp() {
     document.getElementById('customerModalOverlay'),
     document.getElementById('deleteModalOverlay'),
     document.getElementById('warehouseModalOverlay'),
-    document.getElementById('deleteWhModalOverlay'),
-    document.getElementById('documentModalOverlay')
+    document.getElementById('deleteWhModalOverlay')
   ].filter(Boolean);
 
   initModalListeners(overlays);

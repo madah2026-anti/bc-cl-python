@@ -23,11 +23,14 @@ export function closeModal(overlayEl) {
  * @param {HTMLElement[]} overlays 
  */
 export function initModalListeners(overlays = []) {
-  // Close on backdrop click
+  // Close on backdrop click & modal close buttons
   overlays.forEach(overlayEl => {
     if (overlayEl) {
       overlayEl.addEventListener('click', (e) => {
         if (e.target === overlayEl) closeModal(overlayEl);
+      });
+      overlayEl.querySelectorAll('.btn-close-modal, .modal-close, .btn-cancel, .btn-close').forEach(btn => {
+        btn.addEventListener('click', () => closeModal(overlayEl));
       });
     }
   });
