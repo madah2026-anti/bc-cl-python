@@ -5,6 +5,7 @@
 import { escapeHtml, debounce } from '../utils/helpers.js';
 import { showToast } from '../utils/toast.js';
 import { openModal, closeModal } from '../utils/modal.js';
+import { clearMasterDataCache } from './sales.js';
 
 let customersData = [];
 let deleteTargetId = null;
@@ -203,6 +204,7 @@ export function initCustomersModule() {
         }
 
         showToast(json.message, 'success');
+        clearMasterDataCache('customers');
         closeModal(customerModalOverlay);
         loadCustomers(customerSearch ? customerSearch.value.trim() : '');
       } catch (err) {
@@ -237,6 +239,7 @@ export function initCustomersModule() {
         }
 
         showToast(json.message, 'success');
+        clearMasterDataCache('customers');
         closeModal(deleteModalOverlay);
         loadCustomers(customerSearch ? customerSearch.value.trim() : '');
       } catch (err) {

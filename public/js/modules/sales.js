@@ -269,7 +269,101 @@ export function initSalesModule() {
   loadSalesDocuments('', salesDocCatSelect ? salesDocCatSelect.value : '5');
 
   // ── Create-Doc In-Page View ──────────────────────────────
+  preloadMasterData();
   initCreateDocView();
+}
+
+
+// ── Master Datasets Memory Cache ──────────────────────────────
+let masterCustomers = null;
+let masterItems = null;
+let masterWarehouses = null;
+let isPreloadingMasterData = false;
+
+export async function preloadMasterData() {
+  if (isPreloadingMasterData) return;
+  isPreloadingMasterData = true;
+
+  const fetchPromises = [];
+
+  if (!masterCustomers) {
+    fetchPromises.push(
+      fetch('/api/customers/search?q=&limit=10000')
+        .then(res => res.json())
+        .then(json => { if (json.success) masterCustomers = json.data || []; })
+        .catch(err => console.error('Error preloading customers cache:', err))
+    );
+  }
+
+  if (!masterItems) {
+    fetchPromises.push(
+      fetch('/api/items/search?q=&limit=10000')
+        .then(res => res.json())
+        .then(json => { if (json.success) masterItems = json.data || []; })
+        .catch(err => console.error('Error preloading items cache:', err))
+    );
+  }
+
+  if (!masterWarehouses) {
+    fetchPromises.push(
+      fetch('/api/warehouses/search?q=&limit=10000')
+        .then(res => res.json())
+        .then(json => { if (json.success) masterWarehouses = json.data || []; })
+        .catch(err => console.error('Error preloading warehouses cache:', err))
+    );
+  }
+
+  await Promise.all(fetchPromises);
+  isPreloadingMasterData = false;
+}
+
+export function clearMasterDataCache(type = 'all') {
+  if (type === 'all' || type === 'customers') masterCustomers = null;
+  if (type === 'all' || type === 'items') masterItems = null;
+  if (type === 'all' || type === 'warehouses') masterWarehouses = null;
+}
+
+async function filterCustomersCache(q) {
+  if (!masterCustomers) await preloadMasterData();
+  const cleanQ = (q || '').trim().toLowerCase();
+  const data = masterCustomers || [];
+  if (!cleanQ) return data.slice(0, 80);
+  return data.filter(c =>
+    (c.cf_t1 && c.cf_t1.toLowerCase().includes(cleanQ)) ||
+    String(c.cf_id).includes(cleanQ)
+  ).slice(0, 80);
+}
+
+async function filterWarehousesCache(q) {
+  if (!masterWarehouses) await preloadMasterData();
+  const cat = document.getElementById('newDocCat')?.dataset?.value || document.getElementById('SalesDocCat')?.value || '';
+  const cleanQ = (q || '').trim().toLowerCase();
+  
+  let list = masterWarehouses || [];
+  if (cat) {
+    list = list.filter(w => {
+      if (!w.cf_t5) return false;
+      const parts = String(w.cf_t5).split(',').map(s => s.trim()).filter(Boolean);
+      return parts.includes(String(cat));
+    });
+  }
+  
+  if (!cleanQ) return list.slice(0, 80);
+  return list.filter(w =>
+    (w.cf_t1 && w.cf_t1.toLowerCase().includes(cleanQ)) ||
+    String(w.cf_id).includes(cleanQ)
+  ).slice(0, 80);
+}
+
+async function filterItemsCache(q) {
+  if (!masterItems) await preloadMasterData();
+  const cleanQ = (q || '').trim().toLowerCase();
+  const data = masterItems || [];
+  if (!cleanQ) return data.slice(0, 80);
+  return data.filter(i =>
+    (i.item_name && i.item_name.toLowerCase().includes(cleanQ)) ||
+    String(i.item_id).includes(cleanQ)
+  ).slice(0, 80);
 }
 
 
@@ -284,9 +378,10 @@ export function initSalesModule() {
  *   hiddenEl    – hidden id input element
  *   dropdownEl  – dropdown container element
  *   fetchUrl    – async fn(query) → [{id, name}]
+ *   getLocalData – optional async fn(query) → [{cf_id/item_id, cf_t1/item_name}]
  *   onSelect    – optional cb(id, name)
  */
-function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, onSelect, portal = false }) {
+function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, getLocalData, onSelect, portal = false }) {
   if (!inputEl || !dropdownEl) return;
 
   let debounceTimer = null;
@@ -430,10 +525,16 @@ function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, onSelect, portal =
 
   async function doSearch(q) {
     try {
-      const res = await fetch(fetchUrl(q));
-      if (!res.ok) return;
-      const json = await res.json();
-      allOptions = (json.data || []).map(r => ({
+      let rawData = [];
+      if (getLocalData) {
+        rawData = await getLocalData(q);
+      } else if (fetchUrl) {
+        const res = await fetch(fetchUrl(q));
+        if (!res.ok) return;
+        const json = await res.json();
+        rawData = json.data || [];
+      }
+      allOptions = rawData.map(r => ({
         id:   r.cf_id ?? r.item_id,
         name: r.cf_t1 ?? r.item_name,
         unit: r.item_unit,
@@ -451,8 +552,12 @@ function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, onSelect, portal =
   inputEl.addEventListener('input', () => {
     const q = inputEl.value.trim();
     hiddenEl.value = '';
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => doSearch(q), 250);
+    if (getLocalData) {
+      doSearch(q);
+    } else {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => doSearch(q), 250);
+    }
   });
 
   inputEl.addEventListener('keydown', (e) => {
@@ -492,6 +597,7 @@ export function openCreateDocView() {
   view.style.display = '';
 
   // Reset form
+  preloadMasterData();
   itemsRowData = [];
   document.getElementById('createDocItemsBody').innerHTML = '';
   document.getElementById('newDocDate').value = new Date().toISOString().split('T')[0];
@@ -501,7 +607,13 @@ export function openCreateDocView() {
   document.getElementById('newDocStockId').value = '';
   document.getElementById('newDocDiscount').value = '0';
   document.getElementById('newDocNotes').value = '';
-  document.getElementById('newDocCat').selectedIndex = 0;
+  const salesDocCatSelect = document.getElementById('SalesDocCat');
+  const newDocCatEl       = document.getElementById('newDocCat');
+  if (newDocCatEl && salesDocCatSelect) {
+    const selectedOpt = salesDocCatSelect.options[salesDocCatSelect.selectedIndex];
+    newDocCatEl.textContent = selectedOpt ? selectedOpt.text : '–';
+    newDocCatEl.dataset.value = salesDocCatSelect.value;
+  }
   document.getElementById('newDocPayMethod').selectedIndex = 0;
   updateCreateDocTotals();
 
@@ -512,18 +624,18 @@ export function openCreateDocView() {
 function initCreateDocView() {
   // Customer combo
   initCombo({
-    inputEl:    document.getElementById('newDocCvSearch'),
-    hiddenEl:   document.getElementById('newDocCvId'),
-    dropdownEl: document.getElementById('customerComboDropdown'),
-    fetchUrl:   q => `/api/customers/search?q=${encodeURIComponent(q)}`
+    inputEl:      document.getElementById('newDocCvSearch'),
+    hiddenEl:     document.getElementById('newDocCvId'),
+    dropdownEl:   document.getElementById('customerComboDropdown'),
+    getLocalData: filterCustomersCache
   });
 
   // Warehouse combo
   initCombo({
-    inputEl:    document.getElementById('newDocStockSearch'),
-    hiddenEl:   document.getElementById('newDocStockId'),
-    dropdownEl: document.getElementById('warehouseComboDropdown'),
-    fetchUrl:   q => `/api/warehouses/search?q=${encodeURIComponent(q)}`
+    inputEl:      document.getElementById('newDocStockSearch'),
+    hiddenEl:     document.getElementById('newDocStockId'),
+    dropdownEl:   document.getElementById('warehouseComboDropdown'),
+    getLocalData: filterWarehousesCache
   });
 
   // Discount → update totals
@@ -577,12 +689,12 @@ function addItemRow() {
   const qtyInput    = tr.querySelector('.item-qty-input');
 
   const combo = initCombo({
-    inputEl:    searchInput,
-    hiddenEl:   { value: null },   // managed via onSelect
+    inputEl:      searchInput,
+    hiddenEl:     { value: null },   // managed via onSelect
     dropdownEl,
-    portal:     true,              // portal mode → never clipped by table overflow
-    fetchUrl:   q => `/api/items/search?q=${encodeURIComponent(q)}`,
-    onSelect:   (id, name) => {
+    portal:       true,              // portal mode → never clipped by table overflow
+    getLocalData: filterItemsCache,
+    onSelect:     (id, name) => {
       // Use the cached allOptions from the combo – no extra network round-trip
       const cached = combo.getAllOptions().find(o => String(o.id) === String(id));
       if (cached) {
@@ -635,9 +747,10 @@ function updateCreateDocTotals() {
 }
 
 async function saveNewDocument() {
-  const catSelect   = document.getElementById('newDocCat');
-  const cash_cat    = parseInt(catSelect?.value || 0);
-  const cash_cat_name = catSelect?.options[catSelect.selectedIndex]?.dataset?.name || catSelect?.options[catSelect.selectedIndex]?.text || '';
+  const salesDocCatSelect = document.getElementById('SalesDocCat');
+  const newDocCatEl       = document.getElementById('newDocCat');
+  const cash_cat          = parseInt(newDocCatEl?.dataset?.value || salesDocCatSelect?.value || 0);
+  const cash_cat_name     = newDocCatEl?.textContent?.trim() || (salesDocCatSelect ? salesDocCatSelect.options[salesDocCatSelect.selectedIndex]?.text : '') || '';
   const cash_date   = document.getElementById('newDocDate')?.value || '';
   const cash_cv_id  = document.getElementById('newDocCvId')?.value;
   const cash_cv_name= document.getElementById('newDocCvSearch')?.value?.trim() || '';

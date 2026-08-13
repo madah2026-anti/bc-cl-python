@@ -235,11 +235,19 @@ def logout(request: Request):
 # ══════════════════════════════════════════════════════════════
 
 @app.get("/api/warehouses")
-def get_warehouses(request: Request):
+def get_warehouses(request: Request, cat: str = Query("")):
     user = get_session_user(request)
     if not user:
         return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
-    rows = db.query_all("SELECT * FROM c_data WHERE cf_cat=18 ORDER BY cf_id")
+    sql = "SELECT * FROM c_data WHERE cf_cat=18"
+    params = []
+    clean_cat = cat.strip()
+    if clean_cat:
+        sql += " AND (FIND_IN_SET(%s, cf_t5) > 0 OR cf_t5 LIKE %s)"
+        like_cat = f"%,{clean_cat},%"
+        params.extend([clean_cat, like_cat])
+    sql += " ORDER BY cf_id"
+    rows = db.query_all(sql, tuple(params))
     return {"success": True, "data": rows}
 
 
@@ -478,7 +486,7 @@ def get_document_details(request: Request, ser: str):
 # ── Items Search API (for combo) ─────────────────────────────
 
 @app.get("/api/items/search")
-def search_items(request: Request, q: str = Query("")):
+def search_items(request: Request, q: str = Query(""), limit: int = Query(0)):
     user = get_session_user(request)
     if not user:
         return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
@@ -489,7 +497,8 @@ def search_items(request: Request, q: str = Query("")):
         sql += " WHERE (item_name LIKE %s OR CAST(item_id AS CHAR) LIKE %s)"
         like = f"%{clean}%"
         params = [like, like]
-    sql += " ORDER BY item_id LIMIT 80"
+    lim = limit if limit > 0 else (80 if clean else 10000)
+    sql += f" ORDER BY item_id LIMIT {lim}"
     rows = db.query_all(sql, tuple(params))
     return {"success": True, "data": rows}
 
@@ -497,18 +506,24 @@ def search_items(request: Request, q: str = Query("")):
 # ── Warehouses Search API (for combo) ────────────────────────
 
 @app.get("/api/warehouses/search")
-def search_warehouses(request: Request, q: str = Query("")):
+def search_warehouses(request: Request, q: str = Query(""), cat: str = Query(""), limit: int = Query(0)):
     user = get_session_user(request)
     if not user:
         return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
-    sql = "SELECT cf_id, cf_t1 FROM c_data WHERE cf_cat = 18"
+    sql = "SELECT cf_id, cf_t1, cf_t5 FROM c_data WHERE cf_cat = 18"
     params = []
     clean = q.strip()
     if clean:
         sql += " AND (cf_t1 LIKE %s OR CAST(cf_id AS CHAR) LIKE %s)"
         like = f"%{clean}%"
-        params = [like, like]
-    sql += " ORDER BY cf_id LIMIT 50"
+        params.extend([like, like])
+    clean_cat = cat.strip()
+    if clean_cat:
+        sql += " AND (FIND_IN_SET(%s, cf_t5) > 0 OR cf_t5 LIKE %s)"
+        like_cat = f"%,{clean_cat},%"
+        params.extend([clean_cat, like_cat])
+    lim = limit if limit > 0 else (50 if clean else 1000)
+    sql += f" ORDER BY cf_id LIMIT {lim}"
     rows = db.query_all(sql, tuple(params))
     return {"success": True, "data": rows}
 
@@ -516,7 +531,7 @@ def search_warehouses(request: Request, q: str = Query("")):
 # ── Customers Combo Search API ────────────────────────────────
 
 @app.get("/api/customers/search")
-def search_customers_combo(request: Request, q: str = Query("")):
+def search_customers_combo(request: Request, q: str = Query(""), limit: int = Query(0)):
     user = get_session_user(request)
     if not user:
         return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
@@ -527,7 +542,8 @@ def search_customers_combo(request: Request, q: str = Query("")):
         sql += " AND (cf_t1 LIKE %s OR CAST(cf_id AS CHAR) LIKE %s)"
         like = f"%{clean}%"
         params = [like, like]
-    sql += " ORDER BY cf_id DESC LIMIT 60"
+    lim = limit if limit > 0 else (60 if clean else 10000)
+    sql += f" ORDER BY cf_id DESC LIMIT {lim}"
     rows = db.query_all(sql, tuple(params))
     return {"success": True, "data": rows}
 
@@ -567,7 +583,7 @@ async def create_sales_document(request: Request):
     cash_amount = sum(float(i.get("cd_tot") or 0) for i in items_list)
     net_amount  = max(0.0, cash_amount - cash_discount)
 
-    next_res = db.query_one("SELECT COALESCE(MAX(cash_ser), 0) + 1 AS nxt FROM cash")
+    next_res = db.query_one("SELECT COALESCE(MAX(cash_ser), 0) + 1 AS nxt FROM cash WHERE cash_cat = %s", (cash_cat,))
     cash_ser = int(next_res.get("nxt", 1)) if next_res else 1
     user_id  = user.get("id")
 
