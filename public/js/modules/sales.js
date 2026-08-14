@@ -86,6 +86,7 @@ export async function openDocumentDetailsView(cashSer) {
 
     const header = json.header;
     const items = json.items || [];
+    currentSalesDocDetails = { header, items };
 
     if (catBadge) catBadge.textContent = header.cash_cat_name || 'سند';
     if (elSer) elSer.textContent = String(header.cash_ser || '–');
@@ -111,13 +112,15 @@ export async function openDocumentDetailsView(cashSer) {
       if (items.length === 0) {
         itemsTableBody.innerHTML = '<tr><td colspan="6" class="table-empty">لا توجد أصناف مسجلة لهذا المستند</td></tr>';
       } else {
-        itemsTableBody.innerHTML = items.map(item => {
+        itemsTableBody.innerHTML = items.map((item, idx) => {
+          const rowNo = item.row_no || (idx + 1);
           const qtyFormatted = item.item_qty != null ? Number(item.item_qty).toLocaleString('ar-SA') : '0';
           const priceFormatted = item.item_price != null ? Number(item.item_price).toLocaleString('ar-SA') : '0';
           const totFormatted = item.cd_tot != null ? Number(item.cd_tot).toLocaleString('ar-SA') : '0';
 
           return `
             <tr>
+              <td><span class="cell-id" style="color: var(--text-muted); font-weight: 500;">${rowNo}</span></td>
               <td><span class="cell-id">${escapeHtml(String(item.item_id || ''))}</span></td>
               <td class="cell-name">${escapeHtml(item.item_name || '–')}</td>
               <td>${escapeHtml(item.item_unit || '–')}</td>
@@ -265,6 +268,16 @@ export function initSalesModule() {
     });
   });
 
+  // Edit button in details view
+  const btnEditSalesDoc = document.getElementById('btnEditSalesDoc');
+  if (btnEditSalesDoc) {
+    btnEditSalesDoc.addEventListener('click', () => {
+      if (currentSalesDocDetails) {
+        openCreateDocView(currentSalesDocDetails);
+      }
+    });
+  }
+
   // Initial load if overview is visible
   loadSalesDocuments('', salesDocCatSelect ? salesDocCatSelect.value : '5');
 
@@ -338,7 +351,7 @@ async function filterWarehousesCache(q) {
   if (!masterWarehouses) await preloadMasterData();
   const cat = document.getElementById('newDocCat')?.dataset?.value || document.getElementById('SalesDocCat')?.value || '';
   const cleanQ = (q || '').trim().toLowerCase();
-  
+
   let list = masterWarehouses || [];
   if (cat) {
     list = list.filter(w => {
@@ -347,7 +360,7 @@ async function filterWarehousesCache(q) {
       return parts.includes(String(cat));
     });
   }
-  
+
   if (!cleanQ) return list.slice(0, 80);
   return list.filter(w =>
     (w.cf_t1 && w.cf_t1.toLowerCase().includes(cleanQ)) ||
@@ -394,8 +407,8 @@ function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, getLocalData, onSe
     document.body.appendChild(dropdownEl);
     Object.assign(dropdownEl.style, {
       position: 'fixed',
-      zIndex:   '9999',
-      right:    'auto'
+      zIndex: '9999',
+      right: 'auto'
     });
   }
 
@@ -535,7 +548,7 @@ function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, getLocalData, onSe
         rawData = json.data || [];
       }
       allOptions = rawData.map(r => ({
-        id:   r.cf_id ?? r.item_id,
+        id: r.cf_id ?? r.item_id,
         name: r.cf_t1 ?? r.item_name,
         unit: r.item_unit,
         price: r.item_sell_price1
@@ -587,7 +600,60 @@ function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, getLocalData, onSe
 
 let itemsRowData = [];   // [{item_id, item_name, item_unit, item_price, item_qty, cd_tot}]
 
-export function openCreateDocView() {
+/**
+ * Calculate discount percentage based on cash_cat and cash_date
+ * @param {string|number} cashCat 
+ * @param {string} cashDate 
+ * @returns {number} discount percentage (e.g., 20 for 20%)
+ */
+export function getDiscountPercentage(cashCat, cashDate) {
+  const cat = parseInt(cashCat || 0, 10);
+  
+  // Category 55 (مبيعات قطعي) gets 0% discount
+  if (cat === 55) {
+    console.log('Discount percentage for category 55:', 0);
+    return 0;
+  }
+
+  // All other categories (including default/unspecified) get 20% discount
+  let percent = 20;
+
+  if (cashDate) {
+    const d = new Date(cashDate);
+    // Can apply additional date-based discount rules here if needed
+  }
+  
+  console.log(`Discount percentage for category ${cat}:`, percent);
+  return percent;
+}
+
+if (typeof window !== 'undefined') {
+  window.getDiscountPercentage = getDiscountPercentage;
+}
+
+function updateDiscountFromRules() {
+  const newDocCatEl = document.getElementById('newDocCat');
+  const salesDocCatSelect = document.getElementById('SalesDocCat');
+  
+  let cash_cat = newDocCatEl?.dataset?.value;
+  if (!cash_cat || cash_cat === '0' || cash_cat === 'undefined') {
+    cash_cat = salesDocCatSelect?.value || '5';
+  }
+  
+  const cash_date = document.getElementById('newDocDate')?.value || '';
+
+  const percent = getDiscountPercentage(cash_cat, cash_date);
+  const discountInput = document.getElementById('newDocDiscount');
+  if (discountInput) {
+    discountInput.value = percent;
+  }
+  updateCreateDocTotals();
+}
+
+let currentSalesDocDetails = null;
+let editingSalesSer = null;
+
+export function openCreateDocView(editData = null) {
   const overview = document.getElementById('sales-overview');
   if (overview) overview.style.display = 'none';
   document.querySelectorAll('.sales-sub-view').forEach(v => v.style.display = 'none');
@@ -596,52 +662,114 @@ export function openCreateDocView() {
   if (!view) return;
   view.style.display = '';
 
-  // Reset form
   preloadMasterData();
   itemsRowData = [];
   document.getElementById('createDocItemsBody').innerHTML = '';
-  document.getElementById('newDocDate').value = new Date().toISOString().split('T')[0];
-  document.getElementById('newDocCvSearch').value = '';
-  document.getElementById('newDocCvId').value = '';
-  document.getElementById('newDocStockSearch').value = '';
-  document.getElementById('newDocStockId').value = '';
-  document.getElementById('newDocDiscount').value = '0';
-  document.getElementById('newDocNotes').value = '';
-  const salesDocCatSelect = document.getElementById('SalesDocCat');
-  const newDocCatEl       = document.getElementById('newDocCat');
-  if (newDocCatEl && salesDocCatSelect) {
-    const selectedOpt = salesDocCatSelect.options[salesDocCatSelect.selectedIndex];
-    newDocCatEl.textContent = selectedOpt ? selectedOpt.text : '–';
-    newDocCatEl.dataset.value = salesDocCatSelect.value;
-  }
-  document.getElementById('newDocPayMethod').selectedIndex = 0;
-  updateCreateDocTotals();
 
-  // Add one empty row to start
-  addItemRow();
+  const headerTitle = view.querySelector('.card-header h3');
+
+  if (editData && editData.header) {
+    const h = editData.header;
+    editingSalesSer = h.cash_ser;
+    if (headerTitle) {
+      headerTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> تعديل المستند رقم #${h.cash_ser}`;
+    }
+    document.getElementById('newDocDate').value = h.cash_date ? String(h.cash_date).split('T')[0] : new Date().toISOString().split('T')[0];
+    document.getElementById('newDocCvSearch').value = h.cash_cv_name || '';
+    document.getElementById('newDocCvId').value = h.cash_cv_id || '';
+    document.getElementById('newDocStockSearch').value = h.cash_stock_name || '';
+    document.getElementById('newDocStockId').value = h.cash_stock_id || '';
+    document.getElementById('newDocNotes').value = h.cash_notes || '';
+    document.getElementById('newDocPayMethod').value = h.cash_pay_method || '';
+
+    const newDocCatEl = document.getElementById('newDocCat');
+    if (newDocCatEl) {
+      newDocCatEl.textContent = h.cash_cat_name || '–';
+      newDocCatEl.dataset.value = h.cash_cat;
+    }
+
+    const discountInput = document.getElementById('newDocDiscount');
+    if (discountInput) {
+      const gross = (editData.items || []).reduce((s, r) => s + (Number(r.cd_tot) || ((Number(r.item_price) || 0) * (Number(r.item_qty) || 0))), 0);
+      const discAmt = Number(h.cash_discount) || 0;
+      const pct = gross > 0 ? (discAmt / gross * 100) : getDiscountPercentage(h.cash_cat, h.cash_date);
+      discountInput.value = Math.round(pct * 100) / 100;
+    }
+
+    if (editData.items && editData.items.length) {
+      editData.items.forEach(item => {
+        addItemRow({
+          item_id: item.item_id,
+          item_name: item.item_name,
+          item_unit: item.item_unit,
+          item_price: Number(item.item_price) || 0,
+          item_qty: Number(item.item_qty) || 1,
+          cd_tot: Number(item.cd_tot) || 0
+        });
+      });
+    } else {
+      addItemRow();
+    }
+  } else {
+    editingSalesSer = null;
+    if (headerTitle) {
+      headerTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg> إنشاء مستند جديد`;
+    }
+    document.getElementById('newDocDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('newDocCvSearch').value = '';
+    document.getElementById('newDocCvId').value = '';
+    document.getElementById('newDocStockSearch').value = '';
+    document.getElementById('newDocStockId').value = '';
+    document.getElementById('newDocNotes').value = '';
+    const salesDocCatSelect = document.getElementById('SalesDocCat');
+    const newDocCatEl = document.getElementById('newDocCat');
+    if (newDocCatEl && salesDocCatSelect) {
+      const selectedOpt = salesDocCatSelect.options[salesDocCatSelect.selectedIndex];
+      newDocCatEl.textContent = selectedOpt ? selectedOpt.text : '–';
+      newDocCatEl.dataset.value = salesDocCatSelect.value;
+    }
+    document.getElementById('newDocPayMethod').selectedIndex = 0;
+    updateDiscountFromRules();
+    addItemRow();
+  }
 }
 
 function initCreateDocView() {
   // Customer combo
   initCombo({
-    inputEl:      document.getElementById('newDocCvSearch'),
-    hiddenEl:     document.getElementById('newDocCvId'),
-    dropdownEl:   document.getElementById('customerComboDropdown'),
+    inputEl: document.getElementById('newDocCvSearch'),
+    hiddenEl: document.getElementById('newDocCvId'),
+    dropdownEl: document.getElementById('customerComboDropdown'),
     getLocalData: filterCustomersCache
   });
 
   // Warehouse combo
   initCombo({
-    inputEl:      document.getElementById('newDocStockSearch'),
-    hiddenEl:     document.getElementById('newDocStockId'),
-    dropdownEl:   document.getElementById('warehouseComboDropdown'),
+    inputEl: document.getElementById('newDocStockSearch'),
+    hiddenEl: document.getElementById('newDocStockId'),
+    dropdownEl: document.getElementById('warehouseComboDropdown'),
     getLocalData: filterWarehousesCache
   });
 
-  // Discount → update totals
-  const discountInput = document.getElementById('newDocDiscount');
-  if (discountInput) {
-    discountInput.addEventListener('input', updateCreateDocTotals);
+  // Date change -> update discount from rules & totals
+  const dateInput = document.getElementById('newDocDate');
+  if (dateInput) {
+    dateInput.addEventListener('change', updateDiscountFromRules);
+    dateInput.addEventListener('input', updateDiscountFromRules);
+  }
+
+  // SalesDocCat change -> update discount from rules
+  const salesDocCatSelect = document.getElementById('SalesDocCat');
+  if (salesDocCatSelect) {
+    salesDocCatSelect.addEventListener('change', () => {
+      const newDocCatEl = document.getElementById('newDocCat');
+      if (newDocCatEl) {
+        const selectedOpt = salesDocCatSelect.options[salesDocCatSelect.selectedIndex];
+        newDocCatEl.textContent = selectedOpt ? selectedOpt.text : '–';
+        newDocCatEl.dataset.value = salesDocCatSelect.value;
+      }
+      updateDiscountFromRules();
+    });
   }
 
   // Add item row button
@@ -655,26 +783,40 @@ function initCreateDocView() {
 
 let _rowSeq = 0;
 
-function addItemRow() {
+function addItemRow(initialVal = null) {
   const rowId = ++_rowSeq;
-  itemsRowData.push({ rowId, item_id: null, item_name: '', item_unit: '', item_price: 0, item_qty: 1, cd_tot: 0 });
+  itemsRowData.push({
+    rowId,
+    item_id: initialVal ? initialVal.item_id : null,
+    item_name: initialVal ? initialVal.item_name : '',
+    item_unit: initialVal ? initialVal.item_unit : '',
+    item_price: initialVal ? (initialVal.item_price || 0) : 0,
+    item_qty: initialVal ? (initialVal.item_qty || 1) : 1,
+    cd_tot: initialVal ? (initialVal.cd_tot || ((initialVal.item_price || 0) * (initialVal.item_qty || 1))) : 0
+  });
 
   const tbody = document.getElementById('createDocItemsBody');
   const tr = document.createElement('tr');
   tr.dataset.rowId = rowId;
+  const currentCount = tbody ? tbody.querySelectorAll('tr').length + 1 : 1;
+  const initPrice = initialVal ? initialVal.item_price : 0;
+  const initQty = initialVal ? initialVal.item_qty : 1;
+  const initTot = initialVal ? (initialVal.cd_tot || (initPrice * initQty)) : 0;
+
   tr.innerHTML = `
+    <td class="row-num-cell" style="color:var(--text-muted);font-size:12px;text-align:center;font-weight:500;">${currentCount}</td>
     <td>
       <div class="combo-wrapper" style="position:relative;">
         <input type="text" class="cell-input item-search-input"
           placeholder="ابحث بالاسم أو الكود…" autocomplete="off"
-          data-row="${rowId}">
+          data-row="${rowId}" value="${escapeHtml(initialVal?.item_name || '')}">
         <div class="combo-dropdown item-combo-dropdown" id="itemDrop_${rowId}"></div>
       </div>
     </td>
-    <td><span class="item-unit-cell" style="color:var(--text-muted);font-size:12px;">–</span></td>
-    <td><input type="number" class="cell-input item-qty-input" value="1" min="0.001" step="any" dir="ltr" data-row="${rowId}"></td>
-    <td><input type="number" class="cell-input item-price-input" value="0" min="0" step="any" dir="ltr" data-row="${rowId}"></td>
-    <td><span class="cell-tot item-tot-cell" id="rowTot_${rowId}">0.00</span></td>
+    <td><span class="item-unit-cell" style="color:var(--text-muted);font-size:12px;">${escapeHtml(initialVal?.item_unit || '–')}</span></td>
+    <td><input type="number" class="cell-input item-qty-input" value="${initQty}" min="0.001" step="any" dir="ltr" data-row="${rowId}"></td>
+    <td><input type="number" class="cell-input item-price-input" value="${initPrice}" min="0" step="any" dir="ltr" data-row="${rowId}"></td>
+    <td><span class="cell-tot item-tot-cell" id="rowTot_${rowId}">${initTot.toLocaleString('ar-SA', { minimumFractionDigits: 2 })}</span></td>
     <td>
       <button type="button" class="btn-del-row" data-row="${rowId}" title="حذف">✕</button>
     </td>
@@ -683,27 +825,27 @@ function addItemRow() {
 
   // Item search combo
   const searchInput = tr.querySelector('.item-search-input');
-  const dropdownEl  = tr.querySelector('.item-combo-dropdown');
-  const unitCell    = tr.querySelector('.item-unit-cell');
-  const priceInput  = tr.querySelector('.item-price-input');
-  const qtyInput    = tr.querySelector('.item-qty-input');
+  const dropdownEl = tr.querySelector('.item-combo-dropdown');
+  const unitCell = tr.querySelector('.item-unit-cell');
+  const priceInput = tr.querySelector('.item-price-input');
+  const qtyInput = tr.querySelector('.item-qty-input');
 
   const combo = initCombo({
-    inputEl:      searchInput,
-    hiddenEl:     { value: null },   // managed via onSelect
+    inputEl: searchInput,
+    hiddenEl: { value: null },   // managed via onSelect
     dropdownEl,
-    portal:       true,              // portal mode → never clipped by table overflow
+    portal: true,              // portal mode → never clipped by table overflow
     getLocalData: filterItemsCache,
-    onSelect:     (id, name) => {
+    onSelect: (id, name) => {
       // Use the cached allOptions from the combo – no extra network round-trip
       const cached = combo.getAllOptions().find(o => String(o.id) === String(id));
       if (cached) {
-        unitCell.textContent = cached.unit  || '–';
-        priceInput.value     = cached.price || 0;
+        unitCell.textContent = cached.unit || '–';
+        priceInput.value = cached.price || 0;
         updateRow(rowId, {
-          item_id:    cached.id,
-          item_name:  cached.name,
-          item_unit:  cached.unit,
+          item_id: cached.id,
+          item_name: cached.name,
+          item_unit: cached.unit,
           item_price: cached.price || 0
         });
       }
@@ -719,6 +861,17 @@ function addItemRow() {
     itemsRowData = itemsRowData.filter(r => r.rowId !== rowId);
     tr.remove();
     updateCreateDocTotals();
+    updateSalesRowNumbers();
+  });
+}
+
+function updateSalesRowNumbers() {
+  const tbody = document.getElementById('createDocItemsBody');
+  if (!tbody) return;
+  const rows = tbody.querySelectorAll('tr');
+  rows.forEach((r, idx) => {
+    const numCell = r.querySelector('.row-num-cell');
+    if (numCell) numCell.textContent = idx + 1;
   });
 }
 
@@ -735,30 +888,37 @@ function updateRow(rowId, patch) {
 }
 
 function updateCreateDocTotals() {
-  const gross    = itemsRowData.reduce((s, r) => s + (r.cd_tot || 0), 0);
-  const discount = parseFloat(document.getElementById('newDocDiscount')?.value || 0);
-  const net      = Math.max(0, gross - discount);
+  const gross = itemsRowData.reduce((s, r) => s + (r.cd_tot || 0), 0);
+  const discountPercent = parseFloat(document.getElementById('newDocDiscount')?.value || 0);
+  const discountAmount = gross * (discountPercent / 100);
+  const net = Math.max(0, gross - discountAmount);
 
   const fmt = n => n.toLocaleString('ar-SA', { minimumFractionDigits: 2 });
   const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = fmt(v); };
   setEl('newDocGross', gross);
-  setEl('newDocDiscountDisplay', discount);
+  setEl('newDocDiscountDisplay', discountAmount);
   setEl('newDocNet', net);
+
+  const percentLabel = document.getElementById('newDocDiscountPercentLabel');
+  if (percentLabel) percentLabel.textContent = `${discountPercent}%`;
 }
 
 async function saveNewDocument() {
   const salesDocCatSelect = document.getElementById('SalesDocCat');
-  const newDocCatEl       = document.getElementById('newDocCat');
-  const cash_cat          = parseInt(newDocCatEl?.dataset?.value || salesDocCatSelect?.value || 0);
-  const cash_cat_name     = newDocCatEl?.textContent?.trim() || (salesDocCatSelect ? salesDocCatSelect.options[salesDocCatSelect.selectedIndex]?.text : '') || '';
-  const cash_date   = document.getElementById('newDocDate')?.value || '';
-  const cash_cv_id  = document.getElementById('newDocCvId')?.value;
-  const cash_cv_name= document.getElementById('newDocCvSearch')?.value?.trim() || '';
-  const cash_stock_id  = document.getElementById('newDocStockId')?.value || null;
-  const cash_stock_name= document.getElementById('newDocStockSearch')?.value?.trim() || '';
-  const cash_pay_method= document.getElementById('newDocPayMethod')?.value || '';
-  const cash_discount  = parseFloat(document.getElementById('newDocDiscount')?.value || 0);
-  const cash_notes     = document.getElementById('newDocNotes')?.value?.trim() || '';
+  const newDocCatEl = document.getElementById('newDocCat');
+  const cash_cat = parseInt(newDocCatEl?.dataset?.value || salesDocCatSelect?.value || 0);
+  const cash_cat_name = newDocCatEl?.textContent?.trim() || (salesDocCatSelect ? salesDocCatSelect.options[salesDocCatSelect.selectedIndex]?.text : '') || '';
+  const cash_date = document.getElementById('newDocDate')?.value || '';
+  const cash_cv_id = document.getElementById('newDocCvId')?.value;
+  const cash_cv_name = document.getElementById('newDocCvSearch')?.value?.trim() || '';
+  const cash_stock_id = document.getElementById('newDocStockId')?.value || null;
+  const cash_stock_name = document.getElementById('newDocStockSearch')?.value?.trim() || '';
+  const cash_pay_method = document.getElementById('newDocPayMethod')?.value || '';
+
+  const gross_amount = itemsRowData.reduce((s, r) => s + (r.cd_tot || 0), 0);
+  const cash_discount_percent = parseFloat(document.getElementById('newDocDiscount')?.value || 0);
+  const cash_discount = gross_amount * (cash_discount_percent / 100);
+  const cash_notes = document.getElementById('newDocNotes')?.value?.trim() || '';
 
   // Validation
   if (!cash_cat || !cash_date || !cash_cv_id) {
@@ -781,7 +941,8 @@ async function saveNewDocument() {
       cash_cv_id: parseInt(cash_cv_id), cash_cv_name,
       cash_stock_id: cash_stock_id ? parseInt(cash_stock_id) : null,
       cash_stock_name, cash_pay_method, cash_discount, cash_notes,
-      items: validItems.map(r => ({
+      items: validItems.map((r, idx) => ({
+        row_no: idx + 1,
         item_id: r.item_id,
         item_price: r.item_price,
         item_qty: r.item_qty,
@@ -789,8 +950,11 @@ async function saveNewDocument() {
       }))
     };
 
-    const res = await fetch('/api/sales/document', {
-      method: 'POST',
+    const url = editingSalesSer ? `/api/sales/document/${editingSalesSer}` : '/api/sales/document';
+    const method = editingSalesSer ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+      method: method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
@@ -813,3 +977,4 @@ async function saveNewDocument() {
     if (btnSave) { btnSave.disabled = false; btnSave.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> حفظ المستند`; }
   }
 }
+

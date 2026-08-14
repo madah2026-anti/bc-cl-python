@@ -197,7 +197,7 @@
                 <td style="width: 12%; vertical-align: middle;"><label
                     style="font-size: 0.88rem; color: var(--text-muted); font-weight: 500;">نوع المستند</label></td>
                 <td style="width: 38%;">
-                  <span id="newDocCat" class="badge-cat"
+                  <span id="newDocCat" class="badge-cat" data-value="5"
                     style="background: rgba(99, 102, 241, 0.15); color: #818cf8; padding: 6px 14px; border-radius: 6px; font-size: 0.95rem; font-weight: 600; display: inline-block;">–</span>
                 </td>
                 <td style="width: 12%; vertical-align: middle;"><label for="newDocDate"
@@ -243,9 +243,15 @@
                   </select>
                 </td>
                 <td style="vertical-align: middle;"><label for="newDocDiscount"
-                    style="font-size: 0.88rem; color: var(--text-muted); font-weight: 500;">الخصم</label></td>
+                    style="font-size: 0.88rem; color: var(--text-muted); font-weight: 500;">الخصم (%)</label></td>
                 <td>
-                  <input type="number" id="newDocDiscount" class="form-input" step="0.01" min="0" value="0" dir="ltr">
+                  <div style="position: relative; display: flex; align-items: center;">
+                    <input type="number" id="newDocDiscount" class="form-input" step="0.01" min="0" value="0" dir="ltr"
+                      readonly
+                      style="background-color: rgba(255, 255, 255, 0.05); cursor: not-allowed; padding-left: 28px;">
+                    <span
+                      style="position: absolute; left: 10px; color: var(--text-muted); font-size: 0.85rem; pointer-events: none;">%</span>
+                  </div>
                 </td>
               </tr>
               <tr>
@@ -267,11 +273,12 @@
           <table class="items-entry-table" id="createDocItemsTable">
             <thead>
               <tr>
-                <th style="width:35%">الصنف</th>
-                <th style="width:11%">الوحدة</th>
+                <th style="width:5%">م</th>
+                <th style="width:32%">الصنف</th>
+                <th style="width:10%">الوحدة</th>
                 <th style="width:14%">الكمية</th>
                 <th style="width:16%">السعر</th>
-                <th style="width:17%">الإجمالي</th>
+                <th style="width:16%">الإجمالي</th>
                 <th style="width:7%"></th>
               </tr>
             </thead>
@@ -296,7 +303,7 @@
             <span class="tot-val white" id="newDocGross">0.00</span>
           </div>
           <div class="tot-item">
-            <span class="tot-label">الخصم:</span>
+            <span class="tot-label">الخصم (<span id="newDocDiscountPercentLabel">0%</span>):</span>
             <span class="tot-val red" id="newDocDiscountDisplay">0.00</span>
           </div>
           <div class="tot-item">
@@ -340,9 +347,17 @@
             </svg>
             تفاصيل المستند
           </h3>
-          <span id="docViewCatBadge" class="badge-cat" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; padding: 4px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;">–</span>
+          <span id="docViewCatBadge" class="badge-cat"
+            style="background: rgba(99, 102, 241, 0.15); color: #818cf8; padding: 4px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;">–</span>
         </div>
-        <div class="card-actions">
+        <div class="card-actions" style="display: flex; gap: 8px; align-items: center;">
+          <button type="button" id="btnEditSalesDoc" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            تعديل المستند
+          </button>
           <button class="btn-back btn-back-sales" id="btnBackFromDocDetails" title="رجوع">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="19" y1="12" x2="5" y2="12" />
@@ -357,39 +372,54 @@
         <!-- ── Section 1: Header Info ── -->
         <p class="create-doc-section-title">بيانات المستند الأساسية</p>
         <div class="table-wrapper" style="margin-bottom: 24px;">
-          <div class="doc-header-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 20px;">
+          <div class="doc-header-grid"
+            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 20px;">
             <div class="doc-info-item">
-              <span class="info-label" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">رقم المستند</span>
+              <span class="info-label"
+                style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">رقم
+                المستند</span>
               <span class="info-val font-bold" id="cash_ser" style="font-size: 1.1rem; color: #38bdf8;">–</span>
             </div>
             <div class="doc-info-item">
-              <span class="info-label" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">تاريخ المستند</span>
+              <span class="info-label"
+                style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">تاريخ
+                المستند</span>
               <span class="info-val" id="cash_date" dir="ltr" style="font-size: 0.95rem;">–</span>
             </div>
             <div class="doc-info-item">
-              <span class="info-label" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">اسم العميل</span>
+              <span class="info-label"
+                style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">اسم
+                العميل</span>
               <span class="info-val font-bold" style="font-size: 0.95rem;">
-                <span id="cash_cv_name">–</span> <small style="color: var(--text-muted); font-size: 0.8rem;">(#<span id="cash_cv_id">–</span>)</small>
+                <span id="cash_cv_name">–</span> <small style="color: var(--text-muted); font-size: 0.8rem;">(#<span
+                    id="cash_cv_id">–</span>)</small>
               </span>
             </div>
             <div class="doc-info-item">
-              <span class="info-label" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">المخزن</span>
+              <span class="info-label"
+                style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">المخزن</span>
               <span class="info-val" style="font-size: 0.95rem;">
-                <span id="cash_stock_name">–</span> <small style="color: var(--text-muted); font-size: 0.8rem;">(#<span id="cash_stock_id">–</span>)</small>
+                <span id="cash_stock_name">–</span> <small style="color: var(--text-muted); font-size: 0.8rem;">(#<span
+                    id="cash_stock_id">–</span>)</small>
               </span>
             </div>
             <div class="doc-info-item">
-              <span class="info-label" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">المندوب</span>
+              <span class="info-label"
+                style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">المندوب</span>
               <span class="info-val" style="font-size: 0.95rem;">
-                <span id="cash_agent_name">–</span> <small style="color: var(--text-muted); font-size: 0.8rem;">(#<span id="cash_agent_id">–</span>)</small>
+                <span id="cash_agent_name">–</span> <small style="color: var(--text-muted); font-size: 0.8rem;">(#<span
+                    id="cash_agent_id">–</span>)</small>
               </span>
             </div>
             <div class="doc-info-item">
-              <span class="info-label" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">طريقة السداد</span>
+              <span class="info-label"
+                style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">طريقة
+                السداد</span>
               <span class="info-val" id="cash_pay_method" style="font-size: 0.95rem;">–</span>
             </div>
             <div class="doc-info-item" style="grid-column: 1 / -1;">
-              <span class="info-label" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">الملاحظات</span>
+              <span class="info-label"
+                style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">الملاحظات</span>
               <span class="info-val" id="cash_notes" style="font-size: 0.9rem; color: #cbd5e1;">–</span>
             </div>
           </div>
@@ -401,6 +431,7 @@
           <table class="data-table" id="docViewItemsTable">
             <thead>
               <tr>
+                <th>م</th>
                 <th>كود الصنف</th>
                 <th>اسم الصنف</th>
                 <th>الوحدة</th>

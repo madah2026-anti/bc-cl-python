@@ -66,6 +66,7 @@
               </svg>
             </div>
             <span class="link-text">تسوية زيادة</span>
+            <span class="record-count" id="invSubAdjUpCount" style="margin-right: auto; margin-left: 0;">–</span>
           </div>
 
           <!-- تسوية تخفيض -->
@@ -292,7 +293,7 @@
   </div>
 
   <!-- ═══════════════════════════════════════════════════════
-       4. Adjustments Up (تسوية زيادة)
+       4. Adjustments Up (تسوية زيادة) - List View
        ═══════════════════════════════════════════════════════ -->
   <div id="inventory-sub-adjustments-up" class="inventory-sub-view" style="display:none;">
     <div class="content-card">
@@ -303,6 +304,7 @@
               points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
           </svg>
           سجل تسويات الزيادة
+          <span class="record-count" id="adjustmentsUpCount"></span>
         </h3>
         <div class="card-actions">
           <button class="btn-back btn-back-inventory" title="رجوع">
@@ -314,18 +316,242 @@
           </button>
         </div>
       </div>
-      <div class="card-body">
-        <div class="placeholder-content">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <polygon
-              points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+
+      <!-- Toolbar: Search + Add Button -->
+      <div class="table-toolbar">
+        <div class="search-box">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
-          <h4>سجل تسوية الزيادة المخزنية</h4>
-          <p>يتم إضافة وتسجيل طلبات تسوية الزيادة بالكميات المخزنية المعتمدة هنا.</p>
+          <input type="text" id="adjustmentsUpSearch" class="form-input" placeholder="بحث برقم التسوية، اسم المخزن، أو الملاحظات…">
         </div>
+        <button class="btn-add" id="btnAddAdjustmentUp">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          إضافة تسوية زيادة
+        </button>
+      </div>
+
+      <!-- Table View -->
+      <div class="table-wrapper">
+        <table class="data-table" id="adjustmentsUpTable">
+          <thead>
+            <tr>
+              <th>رقم المستند</th>
+              <th>التاريخ</th>
+              <th>اسم المخزن</th>
+              <th>ملاحظات</th>
+            </tr>
+          </thead>
+          <tbody id="adjustmentsUpTableBody">
+            <tr>
+              <td colspan="4" class="table-loading">جاري تحميل البيانات…</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       Create Adjustment Up In-Page Sub-View (إضافة تسوية زيادة)
+       ═══════════════════════════════════════════════════════ -->
+  <div id="inventory-sub-create-adj-up" class="inventory-sub-view" style="display:none;">
+    <div class="content-card">
+      <div class="card-header">
+        <h3>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          إضافة تسوية زيادة جديدة
+        </h3>
+        <div class="card-actions">
+          <button class="btn-back btn-back-adj-up" title="رجوع">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12" />
+              <polyline points="12 19 5 12 12 5" />
+            </svg>
+            رجوع
+          </button>
+        </div>
+      </div>
+
+      <div class="card-body" style="padding: 24px;">
+
+        <!-- ── Section 1: Header Info Table ── -->
+        <p class="create-doc-section-title">بيانات التسوية (الهيدر)</p>
+        <div class="table-wrapper" style="margin-bottom: 20px;">
+          <table class="create-doc-header-table" style="width: 100%; border-collapse: separate; border-spacing: 12px 14px;">
+            <tbody>
+              <tr>
+                <td style="width: 14%; vertical-align: middle;">
+                  <label style="font-size: 0.88rem; color: var(--text-muted); font-weight: 500;">رقم المستند (cash_ser)</label>
+                </td>
+                <td style="width: 36%;">
+                  <span id="adjUpNextSerBadge" class="code-badge" style="font-size: 1rem; font-weight: 700; padding: 6px 14px; background: rgba(56, 189, 248, 0.12); color: #38bdf8; border-radius: 6px;">تلقائي</span>
+                </td>
+                <td style="width: 14%; vertical-align: middle;">
+                  <label for="adjUpDate" style="font-size: 0.88rem; color: var(--text-muted); font-weight: 500;">التاريخ (cash_date) <span style="color:#f87171">*</span></label>
+                </td>
+                <td style="width: 36%;">
+                  <input type="date" id="adjUpDate" class="form-input" required dir="ltr">
+                </td>
+              </tr>
+              <tr>
+                <td style="vertical-align: middle;">
+                  <label style="font-size: 0.88rem; color: var(--text-muted); font-weight: 500;">اسم المخزن (cash_stock_name)</label>
+                </td>
+                <td>
+                  <div class="combo-wrapper" style="position:relative;">
+                    <input type="text" id="adjUpStockSearch" class="combo-input form-input" placeholder="ابحث باسم المخزن أو الكود…" autocomplete="off">
+                    <input type="hidden" id="adjUpStockId">
+                    <div class="combo-dropdown" id="adjUpStockDropdown"></div>
+                  </div>
+                </td>
+                <td style="vertical-align: top; padding-top: 8px;">
+                  <label for="adjUpNotes" style="font-size: 0.88rem; color: var(--text-muted); font-weight: 500;">ملاحظات (cash_notes)</label>
+                </td>
+                <td>
+                  <textarea id="adjUpNotes" class="form-input" rows="2" placeholder="ملاحظات تسوية الزيادة…" style="resize:vertical;"></textarea>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ── Section 2: Items Details Table ── -->
+        <p class="create-doc-section-title" style="margin-top:28px;">تفاصيل أصناف التسوية</p>
+
+        <div class="table-wrapper" style="overflow-x:auto;">
+          <table class="items-entry-table" id="adjUpItemsTable" style="width:100%;">
+            <thead>
+              <tr>
+                <th style="width:6%">م</th>
+                <th style="width:40%">اسم الصنف (item_name)</th>
+                <th style="width:20%">الوحدة (item_unit)</th>
+                <th style="width:24%">الكمية (item_qty)</th>
+                <th style="width:10%"></th>
+              </tr>
+            </thead>
+            <tbody id="adjUpItemsBody">
+              <!-- Dynamic rows injected by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <button type="button" class="btn-add-item-row" id="btnAddAdjUpRow" style="margin-top:14px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          إضافة صنف
+        </button>
+
+        <!-- Save / Cancel Actions -->
+        <div class="create-doc-actions" style="margin-top: 28px; display: flex; gap: 12px; justify-content: flex-end;">
+          <button type="button" class="btn-back btn-back-adj-up">إلغاء</button>
+          <button type="button" class="btn-save-doc" id="btnSaveAdjUp">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+              <polyline points="17 21 17 13 7 13 7 21" />
+              <polyline points="7 3 7 8 15 8" />
+            </svg>
+            حفظ التسوية
+          </button>
+        </div>
+
+      </div><!-- /.card-body -->
+    </div><!-- /.content-card -->
+  </div><!-- /#inventory-sub-create-adj-up -->
+
+  <!-- ═══════════════════════════════════════════════════════
+       Adjustment Up Details In-Page Sub-View (عرض تفاصيل تسوية)
+       ═══════════════════════════════════════════════════════ -->
+  <div id="inventory-sub-adj-up-details" class="inventory-sub-view" style="display:none;">
+    <div class="content-card">
+      <div class="card-header">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <h3>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+            </svg>
+            تفاصيل تسوية الزيادة
+          </h3>
+          <span id="adjUpDetailSerBadge" class="badge-cat" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 4px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;">–</span>
+        </div>
+        <div class="card-actions" style="display: flex; gap: 8px; align-items: center;">
+          <button type="button" id="btnEditAdjUp" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            تعديل التسوية
+          </button>
+          <button class="btn-back btn-back-adj-up" title="رجوع">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12" />
+              <polyline points="12 19 5 12 12 5" />
+            </svg>
+            رجوع
+          </button>
+        </div>
+      </div>
+
+      <div class="card-body" style="padding: 24px;">
+        <!-- Header Info -->
+        <p class="create-doc-section-title">بيانات التسوية الأساسية</p>
+        <div class="table-wrapper" style="margin-bottom: 24px;">
+          <div class="doc-header-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 20px;">
+            <div class="doc-info-item">
+              <span class="info-label" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">رقم المستند (cash_ser)</span>
+              <span class="info-val font-bold" id="adjUpDetailSer" style="font-size: 1.1rem; color: #38bdf8;">–</span>
+            </div>
+            <div class="doc-info-item">
+              <span class="info-label" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">التاريخ (cash_date)</span>
+              <span class="info-val" id="adjUpDetailDate" dir="ltr" style="font-size: 0.95rem;">–</span>
+            </div>
+            <div class="doc-info-item">
+              <span class="info-label" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">اسم المخزن (cash_stock_name)</span>
+              <span class="info-val font-bold" id="adjUpDetailStock" style="font-size: 0.95rem;">–</span>
+            </div>
+            <div class="doc-info-item" style="grid-column: 1 / -1;">
+              <span class="info-label" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">الملاحظات (cash_notes)</span>
+              <span class="info-val" id="adjUpDetailNotes" style="font-size: 0.9rem; color: #cbd5e1;">–</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Items Table -->
+        <p class="create-doc-section-title" style="margin-top:28px;">تفاصيل الأصناف</p>
+        <div class="table-wrapper">
+          <table class="data-table" id="adjUpDetailItemsTable">
+            <thead>
+              <tr>
+                <th>م</th>
+                <th>كود الصنف</th>
+                <th>اسم الصنف (item_name)</th>
+                <th>الوحدة (item_unit)</th>
+                <th>الكمية (item_qty)</th>
+              </tr>
+            </thead>
+            <tbody id="adjUpDetailItemsBody">
+              <tr>
+                <td colspan="4" class="table-loading">جاري تحميل أصناف التسوية…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div><!-- /.card-body -->
+    </div><!-- /.content-card -->
+  </div><!-- /#inventory-sub-adj-up-details -->
 
   <!-- ═══════════════════════════════════════════════════════
        5. Adjustments Down (تسوية تخفيض)

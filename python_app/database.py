@@ -60,3 +60,27 @@ def execute_mod(sql: str, params: tuple = ()):
             return cursor.rowcount, cursor.lastrowid
     finally:
         conn.close()
+
+def get_next_cash_ser(tmpcashcat):
+    conn = get_connection()
+
+    try:
+        print(f"🔍 getting next cash ser for category: {tmpcashcat}")
+
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT MAX(cash_ser) AS max_ser FROM cash WHERE cash_cat = %s", (tmpcashcat,))
+            row = cursor.fetchone()
+            max_ser = row.get("max_ser") if row else None
+
+            if max_ser is not None and max_ser > 0:
+                return int(max_ser) + 1
+
+            try:
+                cat_num = int(tmpcashcat)
+            except (ValueError, TypeError):
+                cat_num = 0
+
+            return (cat_num * 10000 + 1) if cat_num > 0 else 1
+    finally:
+        conn.close()
+

@@ -467,6 +467,7 @@ def get_document_details(request: Request, ser: str):
 
     items = db.query_all(
         """SELECT 
+            cd.row_no,
             cd.item_id, 
             i.item_name, 
             i.item_unit, 
@@ -476,7 +477,7 @@ def get_document_details(request: Request, ser: str):
            FROM cash_details cd 
            LEFT JOIN items i ON cd.item_id = i.item_id 
            WHERE cd.cash_ser = %s
-           ORDER BY cd.cd_id ASC""",
+           ORDER BY cd.row_no ASC, cd.cd_id ASC""",
         (ser,)
     )
 
@@ -583,8 +584,7 @@ async def create_sales_document(request: Request):
     cash_amount = sum(float(i.get("cd_tot") or 0) for i in items_list)
     net_amount  = max(0.0, cash_amount - cash_discount)
 
-    next_res = db.query_one("SELECT COALESCE(MAX(cash_ser), 0) + 1 AS nxt FROM cash WHERE cash_cat = %s", (cash_cat,))
-    cash_ser = int(next_res.get("nxt", 1)) if next_res else 1
+    cash_ser = db.get_next_cash_ser(cash_cat)
     user_id  = user.get("id")
 
     db.execute_mod(
@@ -600,7 +600,8 @@ async def create_sales_document(request: Request):
          net_amount, cash_discount, user_id)
     )
 
-    for item in items_list:
+    for idx, item in enumerate(items_list, 1):
+        row_no     = int(item.get("row_no") or idx)
         item_id    = item.get("item_id")
         item_price = float(item.get("item_price") or 0)
         item_qty   = float(item.get("item_qty") or 0)
@@ -610,10 +611,10 @@ async def create_sales_document(request: Request):
             continue
         db.execute_mod(
             """INSERT INTO cash_details
-               (cash_ser, Stock_id, item_id, item_price, item_qty, cd_tot, cd_date, cd_cat)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+               (cash_ser, Stock_id, item_id, item_price, item_qty, cd_tot, cd_date, cd_cat, row_no)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (cash_ser, stock_id or None, item_id, item_price, item_qty, cd_tot,
-             cash_date, cash_cat)
+             cash_date, cash_cat, row_no)
         )
 
     print(f"→ Document created by {user.get('username')}: ser={cash_ser} cat={cash_cat} cv={cash_cv_name}")
@@ -621,6 +622,87 @@ async def create_sales_document(request: Request):
         "success": True,
         "message": f"تم إنشاء المستند بنجاح – رقم المستند: {cash_ser}",
         "cash_ser": cash_ser
+    })
+
+
+# ── Update Sales Document ─────────────────────────────────────
+
+@app.put("/api/sales/document/{ser}")
+async def update_sales_document(ser: str, request: Request):
+    user = get_session_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
+
+    header = db.query_one("SELECT * FROM cash WHERE cash_ser = %s", (ser,))
+    if not header:
+        return JSONResponse(status_code=404, content={"success": False, "error": "المستند غير موجود"})
+
+    if (header.get("cash_posted") or 0) >= 7:
+        return JSONResponse(status_code=400, content={"success": False, "error": "المستند مرحل ولا يمكن تعديله"})
+
+    body = await request.json()
+
+    cash_cat       = int(body.get("cash_cat") or header.get("cash_cat") or 0)
+    cash_cat_name  = str(body.get("cash_cat_name") or header.get("cash_cat_name") or "").strip()
+    cash_date      = str(body.get("cash_date") or "").strip()
+    cash_cv_id     = body.get("cash_cv_id")
+    cash_cv_name   = str(body.get("cash_cv_name") or "").strip()
+    cash_stock_id  = body.get("cash_stock_id")
+    cash_stock_name= str(body.get("cash_stock_name") or "").strip()
+    cash_agent_id  = body.get("cash_agent_id")
+    cash_agent_name= str(body.get("cash_agent_name") or "").strip()
+    cash_pay_method= str(body.get("cash_pay_method") or "").strip()
+    cash_notes     = str(body.get("cash_notes") or "").strip()
+    cash_discount  = float(body.get("cash_discount") or 0)
+    items_list     = body.get("items") or []
+
+    if not cash_date or not cash_cv_id:
+        return JSONResponse(status_code=400, content={"success": False, "error": "التاريخ والعميل حقول مطلوبة"})
+
+    if not items_list:
+        return JSONResponse(status_code=400, content={"success": False, "error": "يجب إضافة صنف واحد على الأقل"})
+
+    cash_amount = sum(float(i.get("cd_tot") or 0) for i in items_list)
+    net_amount  = max(0.0, cash_amount - cash_discount)
+    user_id     = user.get("id") or user.get("username")
+
+    db.execute_mod(
+        """UPDATE cash SET
+            cash_cat = %s, cash_cat_name = %s, cash_date = %s,
+            cash_cv_id = %s, cash_cv_name = %s, cash_stock_id = %s, cash_stock_name = %s,
+            cash_agent_id = %s, cash_agent_name = %s, cash_pay_method = %s, cash_notes = %s,
+            cash_amount = %s, cash_discount = %s, user_edit = %s
+           WHERE cash_ser = %s""",
+        (cash_cat, cash_cat_name, cash_date,
+         cash_cv_id or None, cash_cv_name, cash_stock_id or None, cash_stock_name,
+         cash_agent_id or None, cash_agent_name, cash_pay_method, cash_notes,
+         net_amount, cash_discount, user_id, ser)
+    )
+
+    db.execute_mod("DELETE FROM cash_details WHERE cash_ser = %s", (ser,))
+
+    for idx, item in enumerate(items_list, 1):
+        row_no     = int(item.get("row_no") or idx)
+        item_id    = item.get("item_id")
+        item_price = float(item.get("item_price") or 0)
+        item_qty   = float(item.get("item_qty") or 0)
+        cd_tot     = float(item.get("cd_tot") or (item_price * item_qty))
+        stock_id   = item.get("stock_id") or cash_stock_id
+        if not item_id:
+            continue
+        db.execute_mod(
+            """INSERT INTO cash_details
+               (cash_ser, Stock_id, item_id, item_price, item_qty, cd_tot, cd_date, cd_cat, row_no)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (ser, stock_id or None, item_id, item_price, item_qty, cd_tot,
+             cash_date, cash_cat, row_no)
+        )
+
+    print(f"→ Document updated by {user.get('username')}: ser={ser} cat={cash_cat} cv={cash_cv_name}")
+    return JSONResponse(status_code=200, content={
+        "success": True,
+        "message": f"تم تعديل المستند رقم {ser} بنجاح",
+        "cash_ser": ser
     })
 
 
@@ -650,3 +732,190 @@ def get_stats(request: Request):
             "salesInvoiceCount": s_cnt
         }
     }
+
+
+# ── Inventory Adjustments-Up APIs (cash_cat = 12) ─────────────
+
+@app.get("/api/inventory/adjustments-up")
+def get_adjustments_up(request: Request, search: str = Query("")):
+    user = get_session_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
+
+    sql = "SELECT cash_ser, cash_date, cash_stock_id, cash_stock_name, cash_notes FROM cash WHERE cash_cat = 12 AND cash_posted < 7"
+    params = []
+
+    clean_search = search.strip()
+    if clean_search:
+        sql += " AND (CAST(cash_ser AS CHAR) LIKE %s OR cash_stock_name LIKE %s OR cash_notes LIKE %s)"
+        like = f"%{clean_search}%"
+        params.extend([like, like, like])
+
+    sql += " ORDER BY cash_ser DESC LIMIT 500"
+    rows = db.query_all(sql, tuple(params))
+    return {"success": True, "data": rows, "cnt": len(rows)}
+
+
+@app.get("/api/inventory/adjustments-up/next-ser")
+def get_next_adjustment_up_ser(request: Request):
+    user = get_session_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
+    next_ser = db.get_next_cash_ser(12)
+    return {"success": True, "next_ser": next_ser}
+
+
+@app.get("/api/inventory/adjustment/{ser}")
+def get_adjustment_details(request: Request, ser: str):
+    user = get_session_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
+
+    if not ser:
+        return JSONResponse(status_code=400, content={"success": False, "error": "رقم المستند مطلوب"})
+
+    header = db.query_one(
+        "SELECT cash_ser, cash_date, cash_stock_id, cash_stock_name, cash_notes, cash_cat_name FROM cash WHERE cash_ser = %s AND cash_cat = 12",
+        (ser,)
+    )
+    if not header:
+        # Fallback without cash_cat condition in case cat is general
+        header = db.query_one(
+            "SELECT cash_ser, cash_date, cash_stock_id, cash_stock_name, cash_notes, cash_cat_name FROM cash WHERE cash_ser = %s",
+            (ser,)
+        )
+    
+    if not header:
+        return JSONResponse(status_code=404, content={"success": False, "error": "المستند غير موجود"})
+
+    items = db.query_all(
+        """SELECT 
+            cd.row_no,
+            cd.item_id, 
+            i.item_name, 
+            i.item_unit, 
+            ABS(cd.item_qty) AS item_qty
+           FROM cash_details cd 
+           LEFT JOIN items i ON cd.item_id = i.item_id 
+           WHERE cd.cash_ser = %s
+           ORDER BY cd.row_no ASC, cd.cd_id ASC""",
+        (ser,)
+    )
+
+    return {"success": True, "header": header, "items": items}
+
+
+@app.post("/api/inventory/adjustment")
+async def create_adjustment(request: Request):
+    user = get_session_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
+
+    body = await request.json()
+
+    cash_date       = str(body.get("cash_date") or "").strip()
+    cash_stock_id   = body.get("cash_stock_id")
+    cash_stock_name = str(body.get("cash_stock_name") or "").strip()
+    cash_notes      = str(body.get("cash_notes") or "").strip()
+    items_list      = body.get("items") or []
+
+    if not cash_date:
+        return JSONResponse(status_code=400, content={"success": False, "error": "تاريخ المستند مطلوب"})
+
+    if not items_list:
+        return JSONResponse(status_code=400, content={"success": False, "error": "يجب إضافة صنف واحد على الأقل"})
+
+    cash_ser = db.get_next_cash_ser(12)
+    user_id  = user.get("id") or user.get("username")
+
+    db.execute_mod(
+        """INSERT INTO cash
+           (cash_ser, cash_cat, cash_cat_name, cash_date,
+            cash_stock_id, cash_stock_name, cash_notes, cash_posted, user_add)
+           VALUES (%s, 12, 'تسوية زيادة', %s, %s, %s, %s, 0, %s)""",
+        (cash_ser, cash_date, cash_stock_id or None, cash_stock_name, cash_notes, user_id)
+    )
+
+    for idx, item in enumerate(items_list, 1):
+        row_no   = int(item.get("row_no") or idx)
+        item_id  = item.get("item_id")
+        item_qty = float(item.get("item_qty") or 0)
+        stock_id = cash_stock_id
+        if not item_id:
+            continue
+        db.execute_mod(
+            """INSERT INTO cash_details
+               (cash_ser, Stock_id, item_id, item_qty, cd_date, cd_cat, row_no)
+               VALUES (%s, %s, %s, %s, %s, 12, %s)""",
+            (cash_ser, stock_id or None, item_id, item_qty, cash_date, row_no)
+        )
+
+    print(f"→ Adjustment Up created by {user.get('username')}: ser={cash_ser} stock={cash_stock_name}")
+    return JSONResponse(status_code=201, content={
+        "success": True,
+        "message": f"تم إنشاء تسوية الزيادة بنجاح – رقم المستند: {cash_ser}",
+        "cash_ser": cash_ser
+    })
+
+
+@app.put("/api/inventory/adjustment/{ser}")
+async def update_adjustment(ser: str, request: Request):
+    user = get_session_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
+
+    header = db.query_one("SELECT * FROM cash WHERE cash_ser = %s AND cash_cat = 12", (ser,))
+    if not header:
+        header = db.query_one("SELECT * FROM cash WHERE cash_ser = %s", (ser,))
+    if not header:
+        return JSONResponse(status_code=404, content={"success": False, "error": "المستند غير موجود"})
+
+    if (header.get("cash_posted") or 0) >= 7:
+        return JSONResponse(status_code=400, content={"success": False, "error": "المستند مرحل ولا يمكن تعديله"})
+
+    body = await request.json()
+
+    cash_date       = str(body.get("cash_date") or "").strip()
+    cash_stock_id   = body.get("cash_stock_id")
+    cash_stock_name = str(body.get("cash_stock_name") or "").strip()
+    cash_notes      = str(body.get("cash_notes") or "").strip()
+    items_list      = body.get("items") or []
+
+    if not cash_date:
+        return JSONResponse(status_code=400, content={"success": False, "error": "تاريخ المستند مطلوب"})
+
+    if not items_list:
+        return JSONResponse(status_code=400, content={"success": False, "error": "يجب إضافة صنف واحد على الأقل"})
+
+    user_id = user.get("id") or user.get("username")
+
+    db.execute_mod(
+        """UPDATE cash SET
+            cash_date = %s, cash_stock_id = %s, cash_stock_name = %s, cash_notes = %s, user_edit = %s
+           WHERE cash_ser = %s""",
+        (cash_date, cash_stock_id or None, cash_stock_name, cash_notes, user_id, ser)
+    )
+
+    db.execute_mod("DELETE FROM cash_details WHERE cash_ser = %s", (ser,))
+
+    for idx, item in enumerate(items_list, 1):
+        row_no   = int(item.get("row_no") or idx)
+        item_id  = item.get("item_id")
+        item_qty = float(item.get("item_qty") or 0)
+        stock_id = cash_stock_id
+        if not item_id:
+            continue
+        db.execute_mod(
+            """INSERT INTO cash_details
+               (cash_ser, Stock_id, item_id, item_qty, cd_date, cd_cat, row_no)
+               VALUES (%s, %s, %s, %s, %s, 12, %s)""",
+            (ser, stock_id or None, item_id, item_qty, cash_date, row_no)
+        )
+
+    print(f"→ Adjustment Up updated by {user.get('username')}: ser={ser} stock={cash_stock_name}")
+    return JSONResponse(status_code=200, content={
+        "success": True,
+        "message": f"تم تعديل تسوية الزيادة رقم {ser} بنجاح",
+        "cash_ser": ser
+    })
+
