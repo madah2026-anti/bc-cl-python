@@ -649,6 +649,9 @@ export async function openCreateAdjustmentUpView(editData = null) {
 }
 
 function addAdjUpItemRow(initialVal = null) {
+  if (initialVal instanceof Event) initialVal = null;
+  const isNewItem = !initialVal;
+
   const rowId = ++_adjUpRowSeq;
   adjUpItemRows.push({
     rowId,
@@ -718,6 +721,12 @@ function addAdjUpItemRow(initialVal = null) {
     tr.remove();
     updateAdjUpRowNumbers();
   });
+
+  if (isNewItem && searchInput) {
+    setTimeout(() => {
+      searchInput.focus();
+    }, 50);
+  }
 }
 
 function updateAdjUpRowNumbers() {

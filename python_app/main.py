@@ -18,6 +18,10 @@ import database as db
 
 load_dotenv()
 
+# Categories that store item_qty as POSITIVE (incoming / add-to-stock flows).
+# All other sales categories store item_qty as NEGATIVE.
+POSITIVE_QTY_CATS = {14}
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 VIEWS_DIR = BASE_DIR / "views"
 PUBLIC_DIR = BASE_DIR / "public"
@@ -536,7 +540,7 @@ def search_customers_combo(request: Request, q: str = Query(""), limit: int = Qu
     user = get_session_user(request)
     if not user:
         return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
-    sql = "SELECT cf_id, cf_t1 FROM c_data WHERE cf_cat = 4"
+    sql = "SELECT cf_id, cf_t1, cf_n1 FROM c_data WHERE cf_cat = 4"
     params = []
     clean = q.strip()
     if clean:
@@ -547,6 +551,85 @@ def search_customers_combo(request: Request, q: str = Query(""), limit: int = Qu
     sql += f" ORDER BY cf_id DESC LIMIT {lim}"
     rows = db.query_all(sql, tuple(params))
     return {"success": True, "data": rows}
+
+
+@app.get("/api/agent/{agent_id}")
+def get_agent_by_id(request: Request, agent_id: int):
+    user = get_session_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
+    row = db.query_one("SELECT cf_id, cf_t1 FROM c_data WHERE cf_id = %s", (agent_id,))
+    if row:
+        return {"success": True, "data": {"agent_id": row["cf_id"], "agent_name": row["cf_t1"]}}
+    return {"success": False, "error": "المندوب غير موجود"}
+
+
+# ── Stock Availability API ────────────────────────────────────
+
+@app.get("/api/stock/available")
+def get_stock_available(request: Request, stock_id: int = Query(...), ser: str = Query("")):
+    """Return items with positive stock in a given warehouse.
+    When ser is provided (edit mode), effective_qty = cur_qty + qty already on that document."""
+    user = get_session_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
+
+    # Fetch current stock levels for this warehouse
+    stock_sql = """
+        SELECT cd.item_id,
+               SUM(cd.item_qty) AS cur_qty
+        FROM cash_details cd
+        WHERE cd.Stock_id = %s
+        GROUP BY cd.item_id
+        HAVING SUM(cd.item_qty) > 0
+    """
+    stock_rows = db.query_all(stock_sql, (stock_id,))
+    stock_map = {r["item_id"]: float(r["cur_qty"]) for r in stock_rows}
+
+    # If editing an existing document, add back the quantities already on it
+    doc_qty_map = {}
+    clean_ser = ser.strip()
+    if clean_ser:
+        doc_rows = db.query_all(
+            "SELECT item_id, ABS(item_qty) AS item_qty FROM cash_details WHERE cash_ser = %s AND Stock_id = %s",
+            (clean_ser, stock_id)
+        )
+        for r in doc_rows:
+            iid = r["item_id"]
+            doc_qty_map[iid] = doc_qty_map.get(iid, 0) + float(r["item_qty"])
+
+    # Merge: effective_qty = cur_qty + existing_doc_qty
+    all_item_ids = set(stock_map.keys()) | set(doc_qty_map.keys())
+    if not all_item_ids:
+        return {"success": True, "data": []}
+
+    # Fetch item metadata for all relevant items
+    placeholders = ",".join(["%s"] * len(all_item_ids))
+    items_meta = db.query_all(
+        f"SELECT item_id, item_name, item_unit, item_sell_price1 FROM items WHERE item_id IN ({placeholders})",
+        tuple(all_item_ids)
+    )
+    meta_map = {r["item_id"]: r for r in items_meta}
+
+    result = []
+    for item_id in all_item_ids:
+        cur_qty = stock_map.get(item_id, 0.0)
+        doc_qty = doc_qty_map.get(item_id, 0.0)
+        effective_qty = cur_qty + doc_qty
+        if effective_qty <= 0:
+            continue
+        meta = meta_map.get(item_id, {})
+        result.append({
+            "item_id": item_id,
+            "item_name": meta.get("item_name", ""),
+            "item_unit": meta.get("item_unit", ""),
+            "item_sell_price1": meta.get("item_sell_price1", 0),
+            "cur_qty": cur_qty,
+            "effective_qty": effective_qty,
+        })
+
+    result.sort(key=lambda x: x["item_name"] or "")
+    return {"success": True, "data": result}
 
 
 # ── Create Sales Document ─────────────────────────────────────
@@ -583,39 +666,107 @@ async def create_sales_document(request: Request):
 
     cash_amount = sum(float(i.get("cd_tot") or 0) for i in items_list)
     net_amount  = max(0.0, cash_amount - cash_discount)
+    user_id     = user.get("id")
 
-    cash_ser = db.get_next_cash_ser(cash_cat)
-    user_id  = user.get("id")
+    # ── Validate stock and save atomically ───────────────────
+    violations = []
 
-    db.execute_mod(
-        """INSERT INTO cash
-           (cash_ser, cash_cat, cash_cat_name, cash_date,
-            cash_cv_id, cash_cv_name, cash_stock_id, cash_stock_name,
-            cash_agent_id, cash_agent_name, cash_pay_method, cash_notes,
-            cash_amount, cash_discount, cash_posted, user_add)
-           VALUES (%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,0,%s)""",
-        (cash_ser, cash_cat, cash_cat_name, cash_date,
-         cash_cv_id or None, cash_cv_name, cash_stock_id or None, cash_stock_name,
-         cash_agent_id or None, cash_agent_name, cash_pay_method, cash_notes,
-         net_amount, cash_discount, user_id)
-    )
+    def _create_txn(conn, cursor):
+        nonlocal violations
+        sid = cash_stock_id
+        if sid:
+            # Lock rows for this warehouse to prevent race conditions
+            item_ids = [i.get("item_id") for i in items_list if i.get("item_id")]
+            if item_ids:
+                placeholders = ",".join(["%s"] * len(item_ids))
+                cursor.execute(
+                    f"""SELECT cd.item_id, SUM(cd.item_qty) AS cur_qty
+                        FROM cash_details cd
+                        WHERE cd.Stock_id = %s AND cd.item_id IN ({placeholders})
+                        GROUP BY cd.item_id
+                        FOR UPDATE""",
+                    (sid, *item_ids)
+                )
+                stock_rows = cursor.fetchall()
+                cur_qty_map = {r["item_id"]: float(r["cur_qty"]) for r in stock_rows}
 
-    for idx, item in enumerate(items_list, 1):
-        row_no     = int(item.get("row_no") or idx)
-        item_id    = item.get("item_id")
-        item_price = float(item.get("item_price") or 0)
-        item_qty   = float(item.get("item_qty") or 0)
-        cd_tot     = float(item.get("cd_tot") or (item_price * item_qty))
-        stock_id   = item.get("stock_id") or cash_stock_id
-        if not item_id:
-            continue
-        db.execute_mod(
-            """INSERT INTO cash_details
-               (cash_ser, Stock_id, item_id, item_price, item_qty, cd_tot, cd_date, cd_cat, row_no)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (cash_ser, stock_id or None, item_id, item_price, item_qty, cd_tot,
-             cash_date, cash_cat, row_no)
+                # Fetch item names for violation messages
+                cursor.execute(f"SELECT item_id, item_name FROM items WHERE item_id IN ({placeholders})", tuple(item_ids))
+                names_map = {r["item_id"]: r["item_name"] for r in cursor.fetchall()}
+
+                for item in items_list:
+                    iid = item.get("item_id")
+                    if not iid:
+                        continue
+                    requested = float(item.get("item_qty") or 0)
+                    available = cur_qty_map.get(iid, 0.0)
+                    if requested > available:
+                        violations.append({
+                            "item_id": iid,
+                            "item_name": names_map.get(iid, str(iid)),
+                            "requested_qty": requested,
+                            "cur_qty": available
+                        })
+
+                if violations:
+                    raise ValueError("stock_violation")
+
+        # Get next serial inside the transaction
+        cursor.execute("SELECT MAX(cash_ser) AS max_ser FROM cash WHERE cash_cat = %s FOR UPDATE", (cash_cat,))
+        row = cursor.fetchone()
+        max_ser = row.get("max_ser") if row else None
+        if max_ser and int(max_ser) > 0:
+            new_ser = int(max_ser) + 1
+        else:
+            new_ser = (cash_cat * 10000 + 1) if cash_cat > 0 else 1
+
+        cursor.execute(
+            """INSERT INTO cash
+               (cash_ser, cash_cat, cash_cat_name, cash_date,
+                cash_cv_id, cash_cv_name, cash_stock_id, cash_stock_name,
+                cash_agent_id, cash_agent_name, cash_pay_method, cash_notes,
+                cash_amount, cash_discount, cash_posted, user_add)
+               VALUES (%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,0,%s)""",
+            (new_ser, cash_cat, cash_cat_name, cash_date,
+             cash_cv_id or None, cash_cv_name, sid or None, cash_stock_name,
+             cash_agent_id or None, cash_agent_name, cash_pay_method, cash_notes,
+             net_amount, cash_discount, user_id)
         )
+
+        for idx, item in enumerate(items_list, 1):
+            row_no     = int(item.get("row_no") or idx)
+            item_id    = item.get("item_id")
+            item_price = float(item.get("item_price") or 0)
+            item_qty   = float(item.get("item_qty") or 0)
+            cd_tot_v   = float(item.get("cd_tot") or (item_price * item_qty))
+            stock_id_v = item.get("stock_id") or sid
+            if not item_id:
+                continue
+            # Positive qty for receipt/add-stock categories; negative for sales
+            signed_qty = abs(item_qty) if cash_cat in POSITIVE_QTY_CATS else -abs(item_qty)
+            cursor.execute(
+                """INSERT INTO cash_details
+                   (cash_ser, Stock_id, item_id, item_price, item_qty, cd_tot, cd_date, cd_cat, row_no)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (new_ser, stock_id_v or None, item_id, item_price, signed_qty, cd_tot_v,
+                 cash_date, cash_cat, row_no)
+            )
+
+        return new_ser
+
+    try:
+        cash_ser = db.execute_transaction(_create_txn)
+    except ValueError as e:
+        if violations:
+            return JSONResponse(status_code=422, content={
+                "success": False,
+                "error": "الكمية المطلوبة تتجاوز المخزون المتاح",
+                "violations": violations
+            })
+        return JSONResponse(status_code=400, content={"success": False, "error": str(e)})
+    except Exception as e:
+        print(f"Error creating document: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "error": "خطأ في حفظ المستند"})
 
     print(f"→ Document created by {user.get('username')}: ser={cash_ser} cat={cash_cat} cv={cash_cv_name}")
     return JSONResponse(status_code=201, content={
@@ -666,37 +817,112 @@ async def update_sales_document(ser: str, request: Request):
     net_amount  = max(0.0, cash_amount - cash_discount)
     user_id     = user.get("id") or user.get("username")
 
-    db.execute_mod(
-        """UPDATE cash SET
-            cash_cat = %s, cash_cat_name = %s, cash_date = %s,
-            cash_cv_id = %s, cash_cv_name = %s, cash_stock_id = %s, cash_stock_name = %s,
-            cash_agent_id = %s, cash_agent_name = %s, cash_pay_method = %s, cash_notes = %s,
-            cash_amount = %s, cash_discount = %s, user_edit = %s
-           WHERE cash_ser = %s""",
-        (cash_cat, cash_cat_name, cash_date,
-         cash_cv_id or None, cash_cv_name, cash_stock_id or None, cash_stock_name,
-         cash_agent_id or None, cash_agent_name, cash_pay_method, cash_notes,
-         net_amount, cash_discount, user_id, ser)
-    )
+    violations = []
 
-    db.execute_mod("DELETE FROM cash_details WHERE cash_ser = %s", (ser,))
+    def _update_txn(conn, cursor):
+        nonlocal violations
+        sid = cash_stock_id
 
-    for idx, item in enumerate(items_list, 1):
-        row_no     = int(item.get("row_no") or idx)
-        item_id    = item.get("item_id")
-        item_price = float(item.get("item_price") or 0)
-        item_qty   = float(item.get("item_qty") or 0)
-        cd_tot     = float(item.get("cd_tot") or (item_price * item_qty))
-        stock_id   = item.get("stock_id") or cash_stock_id
-        if not item_id:
-            continue
-        db.execute_mod(
-            """INSERT INTO cash_details
-               (cash_ser, Stock_id, item_id, item_price, item_qty, cd_tot, cd_date, cd_cat, row_no)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (ser, stock_id or None, item_id, item_price, item_qty, cd_tot,
-             cash_date, cash_cat, row_no)
+        if sid:
+            item_ids = [i.get("item_id") for i in items_list if i.get("item_id")]
+            if item_ids:
+                placeholders = ",".join(["%s"] * len(item_ids))
+
+                # Lock current stock rows
+                cursor.execute(
+                    f"""SELECT cd.item_id, SUM(cd.item_qty) AS cur_qty
+                        FROM cash_details cd
+                        WHERE cd.Stock_id = %s AND cd.item_id IN ({placeholders})
+                        GROUP BY cd.item_id
+                        FOR UPDATE""",
+                    (sid, *item_ids)
+                )
+                stock_rows = cursor.fetchall()
+                cur_qty_map = {r["item_id"]: float(r["cur_qty"]) for r in stock_rows}
+
+                # Fetch existing quantities on THIS document (to add back)
+                cursor.execute(
+                    f"SELECT item_id, ABS(item_qty) AS item_qty FROM cash_details WHERE cash_ser = %s AND Stock_id = %s AND item_id IN ({placeholders})",
+                    (ser, sid, *item_ids)
+                )
+                doc_rows = cursor.fetchall()
+                doc_qty_map = {}
+                for r in doc_rows:
+                    iid = r["item_id"]
+                    doc_qty_map[iid] = doc_qty_map.get(iid, 0) + float(r["item_qty"])
+
+                # Fetch item names for violation messages
+                cursor.execute(f"SELECT item_id, item_name FROM items WHERE item_id IN ({placeholders})", tuple(item_ids))
+                names_map = {r["item_id"]: r["item_name"] for r in cursor.fetchall()}
+
+                for item in items_list:
+                    iid = item.get("item_id")
+                    if not iid:
+                        continue
+                    requested = float(item.get("item_qty") or 0)
+                    cur_qty = cur_qty_map.get(iid, 0.0)
+                    doc_qty = doc_qty_map.get(iid, 0.0)
+                    effective_qty = cur_qty + doc_qty
+                    if requested > effective_qty:
+                        violations.append({
+                            "item_id": iid,
+                            "item_name": names_map.get(iid, str(iid)),
+                            "requested_qty": requested,
+                            "cur_qty": effective_qty
+                        })
+
+                if violations:
+                    raise ValueError("stock_violation")
+
+        cursor.execute(
+            """UPDATE cash SET
+                cash_cat = %s, cash_cat_name = %s, cash_date = %s,
+                cash_cv_id = %s, cash_cv_name = %s, cash_stock_id = %s, cash_stock_name = %s,
+                cash_agent_id = %s, cash_agent_name = %s, cash_pay_method = %s, cash_notes = %s,
+                cash_amount = %s, cash_discount = %s, user_edit = %s
+               WHERE cash_ser = %s""",
+            (cash_cat, cash_cat_name, cash_date,
+             cash_cv_id or None, cash_cv_name, sid or None, cash_stock_name,
+             cash_agent_id or None, cash_agent_name, cash_pay_method, cash_notes,
+             net_amount, cash_discount, user_id, ser)
         )
+
+        cursor.execute("DELETE FROM cash_details WHERE cash_ser = %s", (ser,))
+
+        for idx, item in enumerate(items_list, 1):
+            row_no     = int(item.get("row_no") or idx)
+            item_id    = item.get("item_id")
+            item_price = float(item.get("item_price") or 0)
+            item_qty   = float(item.get("item_qty") or 0)
+            cd_tot_v   = float(item.get("cd_tot") or (item_price * item_qty))
+            stock_id_v = item.get("stock_id") or sid
+            if not item_id:
+                continue
+            # Positive qty for receipt/add-stock categories; negative for sales
+            signed_qty = abs(item_qty) if cash_cat in POSITIVE_QTY_CATS else -abs(item_qty)
+            cursor.execute(
+                """INSERT INTO cash_details
+                   (cash_ser, Stock_id, item_id, item_price, item_qty, cd_tot, cd_date, cd_cat, row_no)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (ser, stock_id_v or None, item_id, item_price, signed_qty, cd_tot_v,
+                 cash_date, cash_cat, row_no)
+            )
+
+        return ser
+
+    try:
+        db.execute_transaction(_update_txn)
+    except ValueError:
+        if violations:
+            return JSONResponse(status_code=422, content={
+                "success": False,
+                "error": "الكمية المطلوبة تتجاوز المخزون المتاح",
+                "violations": violations
+            })
+        return JSONResponse(status_code=400, content={"success": False, "error": "خطأ في التحقق من المخزون"})
+    except Exception as e:
+        print(f"Error updating document: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "error": "خطأ في حفظ المستند"})
 
     print(f"→ Document updated by {user.get('username')}: ser={ser} cat={cash_cat} cv={cash_cv_name}")
     return JSONResponse(status_code=200, content={

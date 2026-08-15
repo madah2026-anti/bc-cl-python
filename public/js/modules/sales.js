@@ -498,22 +498,25 @@ function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, getLocalData, onSe
       dropdownEl.querySelectorAll('.combo-option').forEach(opt => {
         opt.addEventListener('mousedown', (e) => {
           e.preventDefault();
-          selectOption(opt.dataset.id, opt.dataset.name);
+          const idx = parseInt(opt.dataset.idx);
+          const item = allOptions[idx];
+          selectOption(opt.dataset.id, opt.dataset.name, item ? item.raw : null);
         });
         opt.addEventListener('touchstart', (e) => {
-          // Touch device instant response
-          selectOption(opt.dataset.id, opt.dataset.name);
+          const idx = parseInt(opt.dataset.idx);
+          const item = allOptions[idx];
+          selectOption(opt.dataset.id, opt.dataset.name, item ? item.raw : null);
         }, { passive: true });
       });
     }
     openDropdown();
   }
 
-  function selectOption(id, name) {
+  function selectOption(id, name, raw) {
     inputEl.value = name;
     hiddenEl.value = id;
     closeDropdown();
-    if (onSelect) onSelect(id, name);
+    if (onSelect) onSelect(id, name, raw);
   }
 
   function moveFocus(dir) {
@@ -551,7 +554,8 @@ function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, getLocalData, onSe
         id: r.cf_id ?? r.item_id,
         name: r.cf_t1 ?? r.item_name,
         unit: r.item_unit,
-        price: r.item_sell_price1
+        price: r.item_sell_price1,
+        raw: r
       }));
       renderOptions(allOptions, q);
     } catch { /* silent */ }
@@ -580,7 +584,11 @@ function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, getLocalData, onSe
     else if (e.key === 'Enter') {
       e.preventDefault();
       const focused = dropdownEl.querySelector('.combo-option.focused');
-      if (focused) selectOption(focused.dataset.id, focused.dataset.name);
+      if (focused) {
+        const idx = parseInt(focused.dataset.idx);
+        const item = allOptions[idx];
+        selectOption(focused.dataset.id, focused.dataset.name, item ? item.raw : null);
+      }
     } else if (e.key === 'Escape') {
       closeDropdown();
     }
@@ -599,6 +607,123 @@ function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, getLocalData, onSe
 // ─────────────────────────────────────────────────────────────
 
 let itemsRowData = [];   // [{item_id, item_name, item_unit, item_price, item_qty, cd_tot}]
+
+// ── Warehouse Stock Cache ─────────────────────────────────────
+// Maps stock_id → [{item_id, item_name, item_unit, item_sell_price1, cur_qty, effective_qty}]
+let warehouseStockCache = {};   // populated on warehouse selection
+let activeStockId = null;       // currently selected warehouse stock_id
+
+/**
+ * Fetch available stock for a warehouse from the server and cache it.
+ * When ser is provided (edit mode) the server adds back existing doc quantities.
+ * @param {number|string} stockId
+ * @param {string|null} ser  – cash_ser when editing an existing document
+ */
+async function loadStockForWarehouse(stockId, ser = null) {
+  if (!stockId) {
+    activeStockId = null;
+    return;
+  }
+  const id = parseInt(stockId);
+  activeStockId = id;
+
+  let url = `/api/stock/available?stock_id=${id}`;
+  if (ser) url += `&ser=${encodeURIComponent(ser)}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const json = await res.json();
+    if (json.success) {
+      warehouseStockCache[id] = json.data || [];
+      // Re-validate all existing rows after stock reload
+      document.querySelectorAll('.item-qty-input').forEach(input => {
+        const rowId = parseInt(input.dataset.row);
+        if (rowId) validateRowQty(rowId);
+      });
+    }
+  } catch (err) {
+    console.error('loadStockForWarehouse error:', err);
+  }
+}
+
+/**
+ * Filter items that have positive stock in the active warehouse.
+ * Falls back to all items if no warehouse is selected or stock not yet loaded.
+ * @param {string} q – search query
+ */
+async function filterItemsWithStock(q) {
+  const stockList = activeStockId != null ? (warehouseStockCache[activeStockId] || null) : null;
+
+  if (!stockList) {
+    // No warehouse selected or stock not loaded yet – fall back to full item list
+    return filterItemsCache(q);
+  }
+
+  const cleanQ = (q || '').trim().toLowerCase();
+
+  // stockList items already have item_name, item_unit, item_sell_price1
+  // Map them to the same shape filterItemsCache produces
+  const mapped = stockList.map(s => ({
+    item_id: s.item_id,
+    item_name: s.item_name,
+    item_unit: s.item_unit,
+    item_sell_price1: s.item_sell_price1,
+    effective_qty: s.effective_qty,
+    cur_qty: s.cur_qty
+  }));
+
+  if (!cleanQ) return mapped.slice(0, 80);
+  return mapped.filter(i =>
+    (i.item_name && i.item_name.toLowerCase().includes(cleanQ)) ||
+    String(i.item_id).includes(cleanQ)
+  ).slice(0, 80);
+}
+
+/**
+ * Validate the qty input for a given row against the warehouse stock.
+ * Adds a visual indicator if quantity exceeds available stock.
+ * @param {number} rowId
+ */
+function validateRowQty(rowId) {
+  const row = itemsRowData.find(r => r.rowId === rowId);
+  if (!row) return true;
+
+  const qtyInput = document.querySelector(`.item-qty-input[data-row="${rowId}"]`);
+  if (!qtyInput) return true;
+
+  if (!activeStockId || !warehouseStockCache[activeStockId]) {
+    qtyInput.classList.remove('qty-exceeded');
+    qtyInput.removeAttribute('title');
+    return true;
+  }
+
+  const stockItem = warehouseStockCache[activeStockId].find(s => String(s.item_id) === String(row.item_id));
+  if (!stockItem) {
+    // Item not in stock for this warehouse
+    if (row.item_id) {
+      qtyInput.classList.add('qty-exceeded');
+      qtyInput.title = 'هذا الصنف غير متوفر في المستودع المحدد';
+      return false;
+    }
+    qtyInput.classList.remove('qty-exceeded');
+    qtyInput.removeAttribute('title');
+    return true;
+  }
+
+  const available = stockItem.effective_qty;
+  const requested = row.item_qty || 0;
+
+  if (requested > available) {
+    qtyInput.classList.add('qty-exceeded');
+    qtyInput.title = `الكمية المطلوبة (${requested}) تتجاوز المتاح (${available.toLocaleString('ar-SA')})`;
+    return false;
+  }
+
+  qtyInput.classList.remove('qty-exceeded');
+  qtyInput.removeAttribute('title');
+  return true;
+}
 
 /**
  * Calculate discount percentage based on cash_cat and cash_date
@@ -643,7 +768,7 @@ function updateDiscountFromRules() {
   const cash_date = document.getElementById('newDocDate')?.value || '';
 
   const percent = getDiscountPercentage(cash_cat, cash_date);
-  const discountInput = document.getElementById('newDocDiscount');
+  const discountInput = document.getElementById('newDocDiscountPercentInput') || document.getElementById('newDocDiscount');
   if (discountInput) {
     discountInput.value = percent;
   }
@@ -666,6 +791,10 @@ export function openCreateDocView(editData = null) {
   itemsRowData = [];
   document.getElementById('createDocItemsBody').innerHTML = '';
 
+  // Reset warehouse stock state for the new doc session
+  warehouseStockCache = {};
+  activeStockId = null;
+
   const headerTitle = view.querySelector('.card-header h3');
 
   if (editData && editData.header) {
@@ -682,13 +811,21 @@ export function openCreateDocView(editData = null) {
     document.getElementById('newDocNotes').value = h.cash_notes || '';
     document.getElementById('newDocPayMethod').value = h.cash_pay_method || '';
 
+    if (h.cash_agent_id || h.cash_agent_name) {
+      setAgentInfo(h.cash_agent_id, h.cash_agent_name);
+    } else if (h.cash_cv_id) {
+      handleCustomerSelection(h.cash_cv_id);
+    } else {
+      setAgentInfo(null);
+    }
+
     const newDocCatEl = document.getElementById('newDocCat');
     if (newDocCatEl) {
       newDocCatEl.textContent = h.cash_cat_name || '–';
       newDocCatEl.dataset.value = h.cash_cat;
     }
 
-    const discountInput = document.getElementById('newDocDiscount');
+    const discountInput = document.getElementById('newDocDiscountPercentInput') || document.getElementById('newDocDiscount');
     if (discountInput) {
       const gross = (editData.items || []).reduce((s, r) => s + (Number(r.cd_tot) || ((Number(r.item_price) || 0) * (Number(r.item_qty) || 0))), 0);
       const discAmt = Number(h.cash_discount) || 0;
@@ -710,6 +847,11 @@ export function openCreateDocView(editData = null) {
     } else {
       addItemRow();
     }
+
+    // Load warehouse stock (with edit-mode effective qty) after items are rendered
+    if (h.cash_stock_id) {
+      loadStockForWarehouse(h.cash_stock_id, h.cash_ser);
+    }
   } else {
     editingSalesSer = null;
     if (headerTitle) {
@@ -721,6 +863,7 @@ export function openCreateDocView(editData = null) {
     document.getElementById('newDocStockSearch').value = '';
     document.getElementById('newDocStockId').value = '';
     document.getElementById('newDocNotes').value = '';
+    setAgentInfo(null);
     const salesDocCatSelect = document.getElementById('SalesDocCat');
     const newDocCatEl = document.getElementById('newDocCat');
     if (newDocCatEl && salesDocCatSelect) {
@@ -734,13 +877,78 @@ export function openCreateDocView(editData = null) {
   }
 }
 
+const agentCache = {};
+
+async function fetchAgentName(agentId) {
+  if (!agentId) return null;
+  if (agentCache[agentId]) return agentCache[agentId];
+  try {
+    const res = await fetch(`/api/agent/${agentId}`);
+    const json = await res.json();
+    if (json.success && json.data && json.data.agent_name) {
+      agentCache[agentId] = json.data.agent_name;
+      return json.data.agent_name;
+    }
+  } catch (err) {
+    console.error('Error fetching agent name:', err);
+  }
+  return null;
+}
+
+async function setAgentInfo(agentId, agentName = null) {
+  const elName = document.getElementById('newDocAgentName');
+  const elId = document.getElementById('newDocAgentId');
+  const elValId = document.getElementById('newDocAgentIdVal');
+  const elValName = document.getElementById('newDocAgentNameVal');
+
+  if (!agentId) {
+    if (elName) elName.textContent = '–';
+    if (elId) elId.textContent = '–';
+    if (elValId) elValId.value = '';
+    if (elValName) elValName.value = '';
+    return;
+  }
+
+  if (elId) elId.textContent = agentId;
+  if (elValId) elValId.value = agentId;
+
+  if (agentName) {
+    agentCache[agentId] = agentName;
+    if (elName) elName.textContent = agentName;
+    if (elValName) elValName.value = agentName;
+    return;
+  }
+
+  const fetchedName = await fetchAgentName(agentId);
+  const finalName = fetchedName || '–';
+  if (elName) elName.textContent = finalName;
+  if (elValName) elValName.value = fetchedName || '';
+}
+
+async function handleCustomerSelection(customerId, customerRaw = null) {
+  if (!customerId) {
+    await setAgentInfo(null);
+    return;
+  }
+  let agentId = customerRaw ? customerRaw.cf_n1 : null;
+  if (agentId == null) {
+    if (!masterCustomers) await preloadMasterData();
+    const cust = (masterCustomers || []).find(c => String(c.cf_id) === String(customerId));
+    if (cust) agentId = cust.cf_n1;
+  }
+  await setAgentInfo(agentId);
+}
+
 function initCreateDocView() {
   // Customer combo
   initCombo({
     inputEl: document.getElementById('newDocCvSearch'),
     hiddenEl: document.getElementById('newDocCvId'),
     dropdownEl: document.getElementById('customerComboDropdown'),
-    getLocalData: filterCustomersCache
+    getLocalData: filterCustomersCache,
+    onSelect: (id, name, raw) => {
+      handleCustomerSelection(id, raw);
+    }
   });
 
   // Warehouse combo
@@ -748,7 +956,13 @@ function initCreateDocView() {
     inputEl: document.getElementById('newDocStockSearch'),
     hiddenEl: document.getElementById('newDocStockId'),
     dropdownEl: document.getElementById('warehouseComboDropdown'),
-    getLocalData: filterWarehousesCache
+    getLocalData: filterWarehousesCache,
+    onSelect: (id) => {
+      // Reset stock cache for the new warehouse and load fresh data
+      warehouseStockCache = {};
+      activeStockId = null;
+      loadStockForWarehouse(id, editingSalesSer);
+    }
   });
 
   // Date change -> update discount from rules & totals
@@ -756,6 +970,13 @@ function initCreateDocView() {
   if (dateInput) {
     dateInput.addEventListener('change', updateDiscountFromRules);
     dateInput.addEventListener('input', updateDiscountFromRules);
+  }
+
+  // Discount percent change -> update totals
+  const discInput = document.getElementById('newDocDiscountPercentInput');
+  if (discInput) {
+    discInput.addEventListener('input', updateCreateDocTotals);
+    discInput.addEventListener('change', updateCreateDocTotals);
   }
 
   // SalesDocCat change -> update discount from rules
@@ -774,7 +995,7 @@ function initCreateDocView() {
 
   // Add item row button
   const btnAddRow = document.getElementById('btnAddItemRow');
-  if (btnAddRow) btnAddRow.addEventListener('click', addItemRow);
+  if (btnAddRow) btnAddRow.addEventListener('click', () => addItemRow());
 
   // Save button
   const btnSave = document.getElementById('btnSaveNewDoc');
@@ -784,6 +1005,9 @@ function initCreateDocView() {
 let _rowSeq = 0;
 
 function addItemRow(initialVal = null) {
+  if (initialVal instanceof Event) initialVal = null;
+  const isNewItem = !initialVal;
+
   const rowId = ++_rowSeq;
   itemsRowData.push({
     rowId,
@@ -835,7 +1059,7 @@ function addItemRow(initialVal = null) {
     hiddenEl: { value: null },   // managed via onSelect
     dropdownEl,
     portal: true,              // portal mode → never clipped by table overflow
-    getLocalData: filterItemsCache,
+    getLocalData: filterItemsWithStock,
     onSelect: (id, name) => {
       // Use the cached allOptions from the combo – no extra network round-trip
       const cached = combo.getAllOptions().find(o => String(o.id) === String(id));
@@ -853,7 +1077,10 @@ function addItemRow(initialVal = null) {
   });
 
   // qty / price change
-  qtyInput.addEventListener('input', () => updateRow(rowId, { item_qty: parseFloat(qtyInput.value) || 0 }));
+  qtyInput.addEventListener('input', () => {
+    updateRow(rowId, { item_qty: parseFloat(qtyInput.value) || 0 });
+    validateRowQty(rowId);
+  });
   priceInput.addEventListener('input', () => updateRow(rowId, { item_price: parseFloat(priceInput.value) || 0 }));
 
   // Delete row
@@ -863,6 +1090,12 @@ function addItemRow(initialVal = null) {
     updateCreateDocTotals();
     updateSalesRowNumbers();
   });
+
+  if (isNewItem && searchInput) {
+    setTimeout(() => {
+      searchInput.focus();
+    }, 50);
+  }
 }
 
 function updateSalesRowNumbers() {
@@ -889,7 +1122,7 @@ function updateRow(rowId, patch) {
 
 function updateCreateDocTotals() {
   const gross = itemsRowData.reduce((s, r) => s + (r.cd_tot || 0), 0);
-  const discountPercent = parseFloat(document.getElementById('newDocDiscount')?.value || 0);
+  const discountPercent = parseFloat(document.getElementById('newDocDiscountPercentInput')?.value || document.getElementById('newDocDiscount')?.value || 0);
   const discountAmount = gross * (discountPercent / 100);
   const net = Math.max(0, gross - discountAmount);
 
@@ -915,8 +1148,11 @@ async function saveNewDocument() {
   const cash_stock_name = document.getElementById('newDocStockSearch')?.value?.trim() || '';
   const cash_pay_method = document.getElementById('newDocPayMethod')?.value || '';
 
+  const cash_agent_id = document.getElementById('newDocAgentIdVal')?.value || null;
+  const cash_agent_name = document.getElementById('newDocAgentNameVal')?.value || '';
+
   const gross_amount = itemsRowData.reduce((s, r) => s + (r.cd_tot || 0), 0);
-  const cash_discount_percent = parseFloat(document.getElementById('newDocDiscount')?.value || 0);
+  const cash_discount_percent = parseFloat(document.getElementById('newDocDiscountPercentInput')?.value || document.getElementById('newDocDiscount')?.value || 0);
   const cash_discount = gross_amount * (cash_discount_percent / 100);
   const cash_notes = document.getElementById('newDocNotes')?.value?.trim() || '';
 
@@ -932,6 +1168,26 @@ async function saveNewDocument() {
     return;
   }
 
+  // ── Client-side pre-save stock check ──────────────────────────
+  if (activeStockId && warehouseStockCache[activeStockId]) {
+    const clientViolations = [];
+    for (const r of validItems) {
+      if (!r.item_id) continue;
+      const stockItem = warehouseStockCache[activeStockId].find(s => String(s.item_id) === String(r.item_id));
+      const available = stockItem ? stockItem.effective_qty : 0;
+      if (r.item_qty > available) {
+        clientViolations.push({ item_name: r.item_name || r.item_id, requested_qty: r.item_qty, cur_qty: available });
+      }
+    }
+    if (clientViolations.length) {
+      const lines = clientViolations.map(v =>
+        `• ${v.item_name}: طلب ${v.requested_qty} / متاح ${v.cur_qty}`
+      ).join('\n');
+      showToast(`الكمية تتجاوز المخزون المتاح:\n${lines}`, 'error');
+      return;
+    }
+  }
+
   const btnSave = document.getElementById('btnSaveNewDoc');
   if (btnSave) { btnSave.disabled = true; btnSave.textContent = 'جاري الحفظ…'; }
 
@@ -941,6 +1197,8 @@ async function saveNewDocument() {
       cash_cv_id: parseInt(cash_cv_id), cash_cv_name,
       cash_stock_id: cash_stock_id ? parseInt(cash_stock_id) : null,
       cash_stock_name, cash_pay_method, cash_discount, cash_notes,
+      cash_agent_id: cash_agent_id ? parseInt(cash_agent_id) : null,
+      cash_agent_name,
       items: validItems.map((r, idx) => ({
         row_no: idx + 1,
         item_id: r.item_id,
@@ -959,6 +1217,26 @@ async function saveNewDocument() {
       body: JSON.stringify(payload)
     });
     const json = await res.json();
+
+    if (res.status === 422 && json.violations) {
+      // Server-side stock violation details
+      const lines = json.violations.map(v =>
+        `• ${v.item_name}: طلب ${v.requested_qty} / متاح ${v.cur_qty}`
+      ).join('\n');
+      showToast(`تجاوز المخزون:\n${lines}`, 'error');
+      // Re-highlight the exceeded qty inputs
+      for (const v of json.violations) {
+        const row = itemsRowData.find(r => String(r.item_id) === String(v.item_id));
+        if (row) {
+          const qtyInput = document.querySelector(`.item-qty-input[data-row="${row.rowId}"]`);
+          if (qtyInput) {
+            qtyInput.classList.add('qty-exceeded');
+            qtyInput.title = `الكمية المطلوبة (${v.requested_qty}) تتجاوز المتاح (${v.cur_qty})`;
+          }
+        }
+      }
+      return;
+    }
 
     if (!res.ok || !json.success) throw new Error(json.error || 'فشل الحفظ');
 

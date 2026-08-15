@@ -231,6 +231,16 @@
                 </td>
               </tr>
               <tr>
+                <td style="vertical-align: middle;"><label
+                    style="font-size: 0.88rem; color: var(--text-muted); font-weight: 500;">المندوب</label></td>
+                <td>
+                  <div style="font-size: 0.9rem; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
+                    <span id="newDocAgentName" style="font-weight: 600;">–</span>
+                    <span style="color: var(--text-muted); font-size: 0.85rem;">(#<span id="newDocAgentId">–</span>)</span>
+                  </div>
+                  <input type="hidden" id="newDocAgentIdVal">
+                  <input type="hidden" id="newDocAgentNameVal">
+                </td>
                 <td style="vertical-align: middle;"><label for="newDocPayMethod"
                     style="font-size: 0.88rem; color: var(--text-muted); font-weight: 500;">طريقة السداد</label></td>
                 <td>
@@ -241,17 +251,6 @@
                     <option value="شيك">شيك</option>
                     <option value="تحويل">تحويل بنكي</option>
                   </select>
-                </td>
-                <td style="vertical-align: middle;"><label for="newDocDiscount"
-                    style="font-size: 0.88rem; color: var(--text-muted); font-weight: 500;">الخصم (%)</label></td>
-                <td>
-                  <div style="position: relative; display: flex; align-items: center;">
-                    <input type="number" id="newDocDiscount" class="form-input" step="0.01" min="0" value="0" dir="ltr"
-                      readonly
-                      style="background-color: rgba(255, 255, 255, 0.05); cursor: not-allowed; padding-left: 28px;">
-                    <span
-                      style="position: absolute; left: 10px; color: var(--text-muted); font-size: 0.85rem; pointer-events: none;">%</span>
-                  </div>
                 </td>
               </tr>
               <tr>
@@ -305,6 +304,7 @@
           <div class="tot-item">
             <span class="tot-label">الخصم (<span id="newDocDiscountPercentLabel">0%</span>):</span>
             <span class="tot-val red" id="newDocDiscountDisplay">0.00</span>
+            <input type="hidden" id="newDocDiscountPercentInput" value="0">
           </div>
           <div class="tot-item">
             <span class="tot-label">صافي المستند:</span>

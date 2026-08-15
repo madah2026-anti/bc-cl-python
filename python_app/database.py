@@ -84,3 +84,29 @@ def get_next_cash_ser(tmpcashcat):
     finally:
         conn.close()
 
+
+def execute_transaction(fn):
+    """
+    Run fn(conn, cursor) inside an atomic transaction.
+    fn should return a value on success.
+    If fn raises, the transaction is rolled back and the exception re-raised.
+    """
+    conn = pymysql.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=False
+    )
+    try:
+        with conn.cursor() as cursor:
+            result = fn(conn, cursor)
+        conn.commit()
+        return result
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
