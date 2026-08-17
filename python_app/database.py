@@ -38,8 +38,6 @@ def query_all(sql: str, params: tuple = ()):
 
 def query_one(sql: str, params: tuple = ()):
     conn = get_connection()
-
-
     try:
         print(f"🔍 query_one : {sql} | [PARAMS]: {params}")
 
@@ -53,7 +51,7 @@ def query_one(sql: str, params: tuple = ()):
 def execute_mod(sql: str, params: tuple = ()):
     conn = get_connection()
     try:
-        print(f"🔍 execute_mod : {sql} | [PARAMS]: {params}")
+        print(f"🔍 execute_modify : {sql} | [PARAMS]: {params}")
 
         with conn.cursor() as cursor:
             cursor.execute(sql, params)
@@ -77,6 +75,28 @@ def get_next_cash_ser(tmpcashcat):
 
             try:
                 cat_num = int(tmpcashcat)
+            except (ValueError, TypeError):
+                cat_num = 0
+
+            return (cat_num * 10000 + 1) if cat_num > 0 else 1
+    finally:
+        conn.close()
+def get_next_cdata_ser(tmpcfcat):
+    conn = get_connection()
+
+    try:
+        print(f"🔍 getting next c_data ser for category: {tmpcfcat}")
+
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT MAX(cf_id) AS max_ser FROM c_data WHERE cf_cat= %s", (tmpcfcat,))
+            row = cursor.fetchone()
+            max_ser = row.get("max_ser") if row else None
+
+            if max_ser is not None and max_ser > 0:
+                return int(max_ser) + 1
+
+            try:
+                cat_num = int(tmpcfcat)
             except (ValueError, TypeError):
                 cat_num = 0
 

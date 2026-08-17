@@ -77,10 +77,6 @@ export function initNavigation() {
     card.addEventListener('click', () => {
       const target = card.dataset.goto;
       switchSection(target);
-
-      if (target === 'sales') {
-        // We used to open the submenu here, but they have been removed
-      }
     });
   });
 

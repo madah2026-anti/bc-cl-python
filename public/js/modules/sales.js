@@ -22,7 +22,7 @@ export async function loadSalesDocuments(search = '', cat = 'all') {
   tableBody.innerHTML = '<tr><td colspan="6" class="table-loading">جاري تحميل البيانات…</td></tr>';
 
   try {
-    let url = `/api/sales/documents?cat=${encodeURIComponent(cat)}`;
+    let url = `/api/documents?cat=${encodeURIComponent(cat)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
 
     const res = await fetch(url);
@@ -37,8 +37,6 @@ export async function loadSalesDocuments(search = '', cat = 'all') {
     tableBody.innerHTML = '<tr><td colspan="6" class="table-empty">خطأ في تحميل مستندات المبيعات</td></tr>';
   }
 }
-
-let lastDocSubKey = 'invoices';
 
 /**
  * Open Document Details in-page sub-view and fetch header + line items
@@ -79,7 +77,7 @@ export async function openDocumentDetailsView(cashSer) {
   if (itemsTableBody) itemsTableBody.innerHTML = '<tr><td colspan="6" class="table-loading">جاري تحميل أصناف المستند…</td></tr>';
 
   try {
-    const res = await fetch(`/api/sales/document/${cashSer}`);
+    const res = await fetch(`/api/document/${cashSer}`);
     if (!res.ok) throw new Error('Document not found');
     const json = await res.json();
     if (!json.success || !json.header) throw new Error(json.error || 'Failed to load document details');
@@ -189,25 +187,6 @@ export function showSalesOverview() {
   loadSalesDocuments(searchText, selectedCat);
 }
 
-export function openSalesSubView(subKey) {
-  if (subKey !== 'doc-details') {
-    lastDocSubKey = subKey;
-  }
-
-  const overview = document.getElementById('sales-overview');
-  if (overview) overview.style.display = 'none';
-
-  document.querySelectorAll('.sales-sub-view').forEach(v => v.style.display = 'none');
-
-  const subView = document.getElementById('sales-sub-' + subKey);
-  if (subView) {
-    subView.style.display = '';
-
-    if (subKey === 'customers') {
-      loadCustomers();
-    }
-  }
-}
 
 export function initSalesModule() {
   const salesDocCatSelect = document.getElementById('SalesDocCat');
@@ -609,7 +588,7 @@ function initCombo({ inputEl, hiddenEl, dropdownEl, fetchUrl, getLocalData, onSe
 let itemsRowData = [];   // [{item_id, item_name, item_unit, item_price, item_qty, cd_tot}]
 
 // ── Warehouse Stock Cache ─────────────────────────────────────
-// Maps stock_id → [{item_id, item_name, item_unit, item_sell_price1, cur_qty, effective_qty}]
+// Maps stock_id → [{item_id, item_name, item_unit, item_sell_price1, cur_qty}]
 let warehouseStockCache = {};   // populated on warehouse selection
 let activeStockId = null;       // currently selected warehouse stock_id
 
@@ -669,7 +648,7 @@ async function filterItemsWithStock(q) {
     item_name: s.item_name,
     item_unit: s.item_unit,
     item_sell_price1: s.item_sell_price1,
-    effective_qty: s.effective_qty,
+
     cur_qty: s.cur_qty
   }));
 
@@ -711,7 +690,7 @@ function validateRowQty(rowId) {
     return true;
   }
 
-  const available = stockItem.effective_qty;
+  const available = stockItem.cur_qty;
   const requested = row.item_qty || 0;
 
   if (requested > available) {
@@ -733,7 +712,7 @@ function validateRowQty(rowId) {
  */
 export function getDiscountPercentage(cashCat, cashDate) {
   const cat = parseInt(cashCat || 0, 10);
-  
+
   // Category 55 (مبيعات قطعي) gets 0% discount
   if (cat === 55) {
     console.log('Discount percentage for category 55:', 0);
@@ -747,7 +726,7 @@ export function getDiscountPercentage(cashCat, cashDate) {
     const d = new Date(cashDate);
     // Can apply additional date-based discount rules here if needed
   }
-  
+
   console.log(`Discount percentage for category ${cat}:`, percent);
   return percent;
 }
@@ -759,12 +738,12 @@ if (typeof window !== 'undefined') {
 function updateDiscountFromRules() {
   const newDocCatEl = document.getElementById('newDocCat');
   const salesDocCatSelect = document.getElementById('SalesDocCat');
-  
+
   let cash_cat = newDocCatEl?.dataset?.value;
   if (!cash_cat || cash_cat === '0' || cash_cat === 'undefined') {
     cash_cat = salesDocCatSelect?.value || '5';
   }
-  
+
   const cash_date = document.getElementById('newDocDate')?.value || '';
 
   const percent = getDiscountPercentage(cash_cat, cash_date);
@@ -1174,7 +1153,7 @@ async function saveNewDocument() {
     for (const r of validItems) {
       if (!r.item_id) continue;
       const stockItem = warehouseStockCache[activeStockId].find(s => String(s.item_id) === String(r.item_id));
-      const available = stockItem ? stockItem.effective_qty : 0;
+      const available = stockItem ? stockItem.cur_qty : 0;
       if (r.item_qty > available) {
         clientViolations.push({ item_name: r.item_name || r.item_id, requested_qty: r.item_qty, cur_qty: available });
       }
@@ -1208,7 +1187,7 @@ async function saveNewDocument() {
       }))
     };
 
-    const url = editingSalesSer ? `/api/sales/document/${editingSalesSer}` : '/api/sales/document';
+    const url = editingSalesSer ? `/api/document/${editingSalesSer}` : '/api/document';
     const method = editingSalesSer ? 'PUT' : 'POST';
 
     const res = await fetch(url, {

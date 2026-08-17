@@ -316,9 +316,8 @@ async def handle_create_customer(request: Request):
     if not cf_t1:
         return JSONResponse(status_code=400, content={"success": False, "error": "اسم العميل مطلوب"})
     
-    next_res = db.query_one("SELECT COALESCE(MAX(cf_id), 0) + 1 AS nextId FROM c_data WHERE cf_cat = 4")
-    next_id = next_res.get("nextId", 1) if next_res else 1
-
+    next_id=db.get_next_cdata_ser(4)
+    
     uid = user.get("id")
     uname = user.get("username")
 
@@ -436,9 +435,9 @@ def fetch_cash_documents(request: Request, search: str = "", include_posted: boo
     return {"success": True, "data": rows, "cnt": len(rows)}
 
 
-@app.get("/sales/documents")
-@app.get("/api/sales/documents")
-def get_all_sales_documents(request: Request, search: str = Query(""), cat: str = Query("5"), all: str = Query("true"), posted: str = Query("true")):
+@app.get("/documents")
+@app.get("/api/documents")
+def get_all_documents(request: Request, search: str = Query(""), cat: str = Query("5"), all: str = Query("true"), posted: str = Query("true")):
     inc_posted = (all.lower() != "false") and (posted.lower() != "false")
     single_cat = None
     clean_cat = cat.strip()
@@ -456,7 +455,7 @@ def get_all_sales_documents(request: Request, search: str = Query(""), cat: str 
 
 # ── Document Details API ─────────────────────────────────────
 
-@app.get("/api/sales/document/{ser}")
+@app.get("/api/document/{ser}")
 def get_document_details(request: Request, ser: str):
     user = get_session_user(request)
     if not user:
@@ -575,66 +574,40 @@ def get_stock_available(request: Request, stock_id: int = Query(...), ser: str =
         return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
 
     # Fetch current stock levels for this warehouse
+    clean_ser = ser.strip()
+
     stock_sql = """
+         SELECT i.item_id, i.item_name, i.item_unit, i.item_sell_price1, COALESCE(s.cur_qty, 0) AS cur_qty
+        from items i
+        LEFT JOIN ( 
         SELECT cd.item_id,
                SUM(cd.item_qty) AS cur_qty
         FROM cash_details cd
         WHERE cd.Stock_id = %s
+        and cd.cash_ser != %s
         GROUP BY cd.item_id
-        HAVING SUM(cd.item_qty) > 0
+        HAVING SUM(cd.item_qty) > 0 ) s on i.item_id = s.item_id order by i.item_name asc
     """
-    stock_rows = db.query_all(stock_sql, (stock_id,))
-    stock_map = {r["item_id"]: float(r["cur_qty"]) for r in stock_rows}
-
-    # If editing an existing document, add back the quantities already on it
-    doc_qty_map = {}
-    clean_ser = ser.strip()
-    if clean_ser:
-        doc_rows = db.query_all(
-            "SELECT item_id, ABS(item_qty) AS item_qty FROM cash_details WHERE cash_ser = %s AND Stock_id = %s",
-            (clean_ser, stock_id)
-        )
-        for r in doc_rows:
-            iid = r["item_id"]
-            doc_qty_map[iid] = doc_qty_map.get(iid, 0) + float(r["item_qty"])
-
-    # Merge: effective_qty = cur_qty + existing_doc_qty
-    all_item_ids = set(stock_map.keys()) | set(doc_qty_map.keys())
-    if not all_item_ids:
-        return {"success": True, "data": []}
-
-    # Fetch item metadata for all relevant items
-    placeholders = ",".join(["%s"] * len(all_item_ids))
-    items_meta = db.query_all(
-        f"SELECT item_id, item_name, item_unit, item_sell_price1 FROM items WHERE item_id IN ({placeholders})",
-        tuple(all_item_ids)
-    )
-    meta_map = {r["item_id"]: r for r in items_meta}
-
+    stock_rows = db.query_all(stock_sql, (stock_id, clean_ser))
     result = []
-    for item_id in all_item_ids:
-        cur_qty = stock_map.get(item_id, 0.0)
-        doc_qty = doc_qty_map.get(item_id, 0.0)
-        effective_qty = cur_qty + doc_qty
-        if effective_qty <= 0:
+    for r in stock_rows:
+        cur_qty = float(r["cur_qty"] or 0)
+        if cur_qty <= 0:
             continue
-        meta = meta_map.get(item_id, {})
         result.append({
-            "item_id": item_id,
-            "item_name": meta.get("item_name", ""),
-            "item_unit": meta.get("item_unit", ""),
-            "item_sell_price1": meta.get("item_sell_price1", 0),
+            "item_id": r["item_id"],
+            "item_name": r["item_name"] or "",
+            "item_unit": r["item_unit"] or "",
+            "item_sell_price1": r["item_sell_price1"] or 0,
             "cur_qty": cur_qty,
-            "effective_qty": effective_qty,
         })
 
-    result.sort(key=lambda x: x["item_name"] or "")
     return {"success": True, "data": result}
 
 
 # ── Create Sales Document ─────────────────────────────────────
 
-@app.post("/api/sales/document")
+@app.post("/api/document")
 async def create_sales_document(request: Request):
     user = get_session_user(request)
     if not user:
@@ -778,7 +751,7 @@ async def create_sales_document(request: Request):
 
 # ── Update Sales Document ─────────────────────────────────────
 
-@app.put("/api/sales/document/{ser}")
+@app.put("/api/document/{ser}")
 async def update_sales_document(ser: str, request: Request):
     user = get_session_user(request)
     if not user:
