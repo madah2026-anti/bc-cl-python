@@ -9,6 +9,28 @@ import { loadCustomers } from './customers.js';
 import { openModal, closeModal } from '../utils/modal.js';
 
 let salesDocumentsData = [];
+let currentSalesDocDetails = null;
+
+function formatDateSafe(val) {
+  if (!val) return '–';
+  try {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return String(val);
+    return d.toISOString().split('T')[0];
+  } catch (_) {
+    return String(val);
+  }
+}
+
+function formatNum(val) {
+  const n = Number(val);
+  if (isNaN(n)) return '0';
+  try {
+    return n.toLocaleString('ar-SA');
+  } catch (_) {
+    return n.toLocaleString();
+  }
+}
 
 /**
  * Load sales documents from cash table with optional category & search filter
@@ -88,7 +110,7 @@ export async function openDocumentDetailsView(cashSer) {
 
     if (catBadge) catBadge.textContent = header.cash_cat_name || 'سند';
     if (elSer) elSer.textContent = String(header.cash_ser || '–');
-    if (elDate) elDate.textContent = header.cash_date ? new Date(header.cash_date).toLocaleDateString('ar-SA') : '–';
+    if (elDate) elDate.textContent = formatDateSafe(header.cash_date);
     if (elCvName) elCvName.textContent = header.cash_cv_name || '–';
     if (elCvId) elCvId.textContent = header.cash_cv_id ? String(header.cash_cv_id) : '–';
     if (elStockName) elStockName.textContent = header.cash_stock_name || '–';
@@ -102,9 +124,38 @@ export async function openDocumentDetailsView(cashSer) {
     const discount = Number(header.cash_discount) || 0;
     const grossAmount = amount + discount;
 
-    if (elGrossAmount) elGrossAmount.textContent = grossAmount.toLocaleString('ar-SA');
-    if (elDiscount) elDiscount.textContent = discount.toLocaleString('ar-SA');
-    if (elAmount) elAmount.textContent = amount.toLocaleString('ar-SA');
+    if (elGrossAmount) elGrossAmount.textContent = formatNum(grossAmount);
+    if (elDiscount) elDiscount.textContent = formatNum(discount);
+    if (elAmount) elAmount.textContent = formatNum(amount);
+
+    // Update Post & Edit button state based on cash_posted
+    const isPosted = (Number(header.cash_posted) || 0) >= 7;
+    const btnPost = document.getElementById('btnPostSalesDoc');
+    const btnEdit = document.getElementById('btnEditSalesDoc');
+
+    if (btnPost) {
+      if (isPosted) {
+        btnPost.disabled = true;
+        btnPost.style.opacity = '0.5';
+        btnPost.style.cursor = 'not-allowed';
+        btnPost.title = 'المستند مرحل بالفعل';
+      } else {
+        btnPost.disabled = false;
+        btnPost.style.opacity = '1';
+        btnPost.style.cursor = 'pointer';
+        btnPost.title = 'ترحيل المستند';
+      }
+    }
+
+    if (btnEdit) {
+      if (isPosted) {
+        btnEdit.style.opacity = '0.5';
+        btnEdit.title = 'المستند مرحل ولا يمكن تعديله';
+      } else {
+        btnEdit.style.opacity = '1';
+        btnEdit.title = 'تعديل المستند';
+      }
+    }
 
     if (itemsTableBody) {
       if (items.length === 0) {
@@ -112,9 +163,9 @@ export async function openDocumentDetailsView(cashSer) {
       } else {
         itemsTableBody.innerHTML = items.map((item, idx) => {
           const rowNo = item.row_no || (idx + 1);
-          const qtyFormatted = item.item_qty != null ? Number(item.item_qty).toLocaleString('ar-SA') : '0';
-          const priceFormatted = item.item_price != null ? Number(item.item_price).toLocaleString('ar-SA') : '0';
-          const totFormatted = item.cd_tot != null ? Number(item.cd_tot).toLocaleString('ar-SA') : '0';
+          const qtyFormatted = item.item_qty != null ? formatNum(item.item_qty) : '0';
+          const priceFormatted = item.item_price != null ? formatNum(item.item_price) : '0';
+          const totFormatted = item.cd_tot != null ? formatNum(item.cd_tot) : '0';
 
           return `
             <tr>
@@ -132,6 +183,7 @@ export async function openDocumentDetailsView(cashSer) {
     }
   } catch (err) {
     console.error('Error opening document details view:', err);
+    if (catBadge) catBadge.textContent = 'خطأ';
     if (itemsTableBody) {
       itemsTableBody.innerHTML = '<tr><td colspan="6" class="table-empty">خطأ في تحميل أصناف المستند</td></tr>';
     }
@@ -157,8 +209,8 @@ export function renderSalesDocumentsTable(data) {
   }
 
   tableBody.innerHTML = data.map(doc => {
-    const formattedDate = doc.cash_date ? new Date(doc.cash_date).toLocaleDateString('ar-SA') : '–';
-    const formattedAmount = doc.cash_amount != null ? Number(doc.cash_amount).toLocaleString('ar-SA') : '0';
+    const formattedDate = formatDateSafe(doc.cash_date);
+    const formattedAmount = doc.cash_amount != null ? formatNum(doc.cash_amount) : '0';
 
     return `
       <tr>
@@ -253,6 +305,88 @@ export function initSalesModule() {
     btnEditSalesDoc.addEventListener('click', () => {
       if (currentSalesDocDetails) {
         openCreateDocView(currentSalesDocDetails);
+      }
+    });
+  }
+
+  // Delete button in details view
+  const btnDeleteSalesDoc = document.getElementById('btnDeleteSalesDoc');
+  if (btnDeleteSalesDoc) {
+    btnDeleteSalesDoc.addEventListener('click', async () => {
+      if (!currentSalesDocDetails || !currentSalesDocDetails.header) return;
+      const ser = currentSalesDocDetails.header.cash_ser;
+
+      const confirmed = confirm(`هل أنت متاكد من حذف المستند رقم (${ser})؟`);
+      if (!confirmed) return;
+
+      btnDeleteSalesDoc.disabled = true;
+      try {
+        const res = await fetch(`/api/document/${ser}`, { method: 'DELETE' });
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+          showToast(json.error || 'حدث خطأ أثناء حذف المستند', 'error');
+          return;
+        }
+
+        showToast(json.message || 'تم حذف المستند بنجاح', 'success');
+
+        showSalesOverview();
+        const catSel = document.getElementById('salesDocCatSelect');
+        const searchInput = document.getElementById('salesDocSearchInput');
+        loadSalesDocuments(searchInput ? searchInput.value.trim() : '', catSel ? catSel.value : '5');
+      } catch (err) {
+        console.error('Delete doc error:', err);
+        showToast('خطأ في الاتصال بالخادم', 'error');
+      } finally {
+        btnDeleteSalesDoc.disabled = false;
+      }
+    });
+  }
+
+  // Post button in details view
+  const btnPostSalesDoc = document.getElementById('btnPostSalesDoc');
+  if (btnPostSalesDoc) {
+    btnPostSalesDoc.addEventListener('click', async () => {
+      if (!currentSalesDocDetails || !currentSalesDocDetails.header) return;
+      const ser = currentSalesDocDetails.header.cash_ser;
+
+      const confirmed = confirm(`هل أنت متاكد من ترحيل المستند رقم (${ser})؟`);
+      if (!confirmed) return;
+
+      btnPostSalesDoc.disabled = true;
+      try {
+        const res = await fetch(`/api/document/post/${ser}`, { method: 'POST' });
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+          showToast(json.error || 'حدث خطأ أثناء ترحيل المستند', 'error');
+          return;
+        }
+
+        showToast(json.message || 'تم ترحيل المستند بنجاح', 'success');
+
+        openDocumentDetailsView(ser);
+        const catSel = document.getElementById('salesDocCatSelect');
+        const searchInput = document.getElementById('salesDocSearchInput');
+        loadSalesDocuments(searchInput ? searchInput.value.trim() : '', catSel ? catSel.value : '5');
+      } catch (err) {
+        console.error('Post doc error:', err);
+        showToast('خطأ في الاتصال بالخادم', 'error');
+      } finally {
+        btnPostSalesDoc.disabled = false;
+      }
+    });
+  }
+
+  // Print button in details view
+  const btnPrintSalesDoc = document.getElementById('btnPrintSalesDoc');
+  if (btnPrintSalesDoc) {
+    btnPrintSalesDoc.addEventListener('click', () => {
+      if (currentSalesDocDetails && currentSalesDocDetails.header) {
+        generateSalesDocumentPDF(currentSalesDocDetails);
+      } else {
+        showToast('لا توجد بيانات مستند للطباعة', 'error');
       }
     });
   }
@@ -1094,7 +1228,7 @@ function updateRow(rowId, patch) {
   row.cd_tot = (row.item_price || 0) * (row.item_qty || 0);
 
   const totEl = document.getElementById(`rowTot_${rowId}`);
-  if (totEl) totEl.textContent = row.cd_tot.toLocaleString('ar-SA', { minimumFractionDigits: 2 });
+  if (totEl) totEl.textContent = formatNum(row.cd_tot);
 
   updateCreateDocTotals();
 }
@@ -1105,7 +1239,7 @@ function updateCreateDocTotals() {
   const discountAmount = gross * (discountPercent / 100);
   const net = Math.max(0, gross - discountAmount);
 
-  const fmt = n => n.toLocaleString('ar-SA', { minimumFractionDigits: 2 });
+  const fmt = n => formatNum(n);
   const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = fmt(v); };
   setEl('newDocGross', gross);
   setEl('newDocDiscountDisplay', discountAmount);
@@ -1234,4 +1368,488 @@ async function saveNewDocument() {
     if (btnSave) { btnSave.disabled = false; btnSave.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> حفظ المستند`; }
   }
 }
+
+
+/**
+ * Generate & open printable 3-page PDF document matching exact specifications
+ * @param {Object} docDetails 
+ */
+export function generateSalesDocumentPDF(docDetails) {
+  if (!docDetails || !docDetails.header) {
+    showToast('بيانات المستند غير مكتملة للطباعة', 'error');
+    return;
+  }
+
+  const header = docDetails.header;
+  const items = docDetails.items || [];
+
+  const cashSer = String(header.cash_ser || '');
+  let docDate = '';
+  if (header.cash_date) {
+    const d = new Date(header.cash_date);
+    docDate = isNaN(d.getTime()) ? String(header.cash_date) : d.toISOString().split('T')[0];
+  }
+
+  const cvId = String(header.cash_cv_id || '');
+  const cvName = header.cash_cv_name || '';
+  const cvPhone = header.customer_phone || '';
+  const cvAddress = header.customer_address || '';
+  const catName = header.cash_cat_name || 'عرض';
+  const stockName = header.cash_stock_name || 'مخزن التسليم بيلا سيتى';
+
+  const amount = Number(header.cash_amount) || 0;
+  const discount = Number(header.cash_discount) || 0;
+  const grossAmount = amount + discount;
+
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    showToast('يرجى السماح بالنوافذ المنبثقة للطباعة', 'error');
+    return;
+  }
+
+  const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>مستند مبيعات #${cashSer}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+
+    @page {
+      size: A4 portrait;
+      margin: 10mm 12mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Cairo', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      direction: rtl;
+      color: #000;
+      background: #fff;
+      font-size: 13px;
+      line-height: 1.4;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .page {
+      width: 100%;
+      min-height: 270mm;
+      padding: 10px 5px;
+      position: relative;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .page-break {
+      page-break-after: always;
+      break-after: page;
+    }
+
+    /* ── Header Banner ── */
+    .header-banner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #b91c1c;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+
+    .header-logo-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-text-red {
+      font-weight: 800;
+      font-size: 26px;
+      color: #b91c1c;
+      letter-spacing: 1px;
+    }
+
+    .company-sub {
+      font-size: 11px;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .header-logo-left {
+      text-align: left;
+      direction: ltr;
+    }
+
+    .bella-title {
+      font-weight: 800;
+      font-size: 18px;
+      color: #1e293b;
+      font-family: serif;
+    }
+
+    .bella-sub {
+      font-size: 8px;
+      font-weight: 700;
+      color: #475569;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Document Title ── */
+    .doc-title {
+      text-align: center;
+      font-size: 18px;
+      font-weight: 800;
+      margin: 6px 0 14px 0;
+      color: #000;
+    }
+
+    /* ── Meta Section ── */
+    .doc-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.8;
+    }
+
+    .meta-col {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .meta-col div span.lbl {
+      display: inline-block;
+      min-width: 90px;
+    }
+
+    /* ── Tables ── */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+    }
+
+    .data-table th, .data-table td {
+      border: 1px solid #000;
+      padding: 5px 8px;
+      text-align: center;
+      font-size: 12px;
+    }
+
+    .data-table th {
+      background-color: #f1f5f9;
+      font-weight: 800;
+      color: #000;
+    }
+
+    .data-table td.name-cell {
+      text-align: right;
+      font-weight: 700;
+    }
+
+    /* ── Totals Box (Page 1) ── */
+    .page1-summary-block {
+      display: flex;
+      justify-content: flex-start;
+      margin-top: 10px;
+    }
+
+    .totals-table {
+      width: 220px;
+      border-collapse: collapse;
+    }
+
+    .totals-table td {
+      border: 1px solid #000;
+      padding: 5px 10px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .totals-table td.lbl {
+      background-color: #f1f5f9;
+      text-align: center;
+      width: 90px;
+    }
+
+    .totals-table td.val {
+      text-align: left;
+      direction: ltr;
+    }
+
+    /* ── Page Footers ── */
+    .footer-sign-block {
+      margin-top: 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      font-weight: 700;
+    }
+
+    .ack-block {
+      margin-top: 25px;
+      font-weight: 700;
+      font-size: 13.5px;
+    }
+
+    .ack-lines {
+      margin-top: 15px;
+      line-height: 2.2;
+    }
+
+    .page-bottom-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: #000;
+      font-weight: 600;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 6px;
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ════════════════ PAGE 1: بيان أسعار ════════════════ -->
+  <div class="page page-break">
+    <div>
+      <div class="header-banner">
+        <div class="header-logo-right">
+          <div class="logo-text-red">بلاستي</div>
+          <div class="company-sub">الشركة المصرية الإيطالية للصناعات الحديثة</div>
+        </div>
+        <div class="header-logo-left">
+          <div class="bella-title">BELLA CITY</div>
+          <div class="bella-sub">THE EGYPTIAN ITALIAN COMPANY FOR MODERN INDUSTRIES</div>
+        </div>
+      </div>
+
+      <div class="doc-title">بيان أسعار</div>
+
+      <div class="doc-meta">
+        <div class="meta-col">
+          <div><span class="lbl">رقم المستند :</span> ${cashSer}</div>
+          <div><span class="lbl">رقم العميل :</span> ${cvId}</div>
+          <div><span class="lbl">الهاتف :</span> ${cvPhone}</div>
+          <div><span class="lbl">العنوان :</span> ${cvAddress}</div>
+          <div><span class="lbl">المستند :</span> ${catName}</div>
+        </div>
+        <div class="meta-col" style="text-align: right;">
+          <div><span class="lbl">التاريخ :</span> ${docDate}</div>
+          <div><span class="lbl">الاسم :</span> ${cvName}</div>
+        </div>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 4%;">م</th>
+            <th style="width: 16%;">كود الصنف</th>
+            <th style="width: 38%;">اسم الصنف</th>
+            <th style="width: 10%;">الوحدة</th>
+            <th style="width: 10%;">الكمية</th>
+            <th style="width: 10%;">السعر</th>
+            <th style="width: 12%;">القيمة</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((it, i) => `
+            <tr>
+              <td>${it.row_no || (i + 1)}</td>
+              <td>${it.item_id || ''}</td>
+              <td class="name-cell">${it.item_name || ''}</td>
+              <td>${it.item_unit || ''}</td>
+              <td>${it.item_qty != null ? Number(it.item_qty) : 0}</td>
+              <td>${it.item_price != null ? Number(it.item_price).toLocaleString('ar-EG', {minimumFractionDigits: 1, maximumFractionDigits: 3}) : '0'}</td>
+              <td>${it.cd_tot != null ? Number(it.cd_tot).toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '0'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <div class="page1-summary-block">
+        <table class="totals-table">
+          <tr>
+            <td class="lbl">الاجمالي</td>
+            <td class="val">${grossAmount.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+          </tr>
+          <tr>
+            <td class="lbl">الخصم</td>
+            <td class="val">${discount.toLocaleString('ar-EG', {minimumFractionDigits: 1, maximumFractionDigits: 2})}</td>
+          </tr>
+          <tr>
+            <td class="lbl">الصافي</td>
+            <td class="val">${amount.toLocaleString('ar-EG', {minimumFractionDigits: 1, maximumFractionDigits: 2})}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="footer-sign-block">
+        <div>السادة / الشركة المصرية الإيطالية ... نوافق على عرض أسعاركم إلينا</div>
+        <div>توقيع العميل</div>
+      </div>
+    </div>
+
+    <div class="page-bottom-bar">
+      <div>صفحة 1 من 1</div>
+      <div dir="ltr">${timeStr}</div>
+    </div>
+  </div>
+
+
+  <!-- ════════════════ PAGE 2: أذن صرف بضاعة (لا توجد علامة مائية) ════════════════ -->
+  <div class="page page-break">
+    <div>
+      <div class="header-banner">
+        <div class="header-logo-right">
+          <div class="logo-text-red">بلاستي</div>
+          <div class="company-sub">الشركة المصرية الإيطالية للصناعات الحديثة</div>
+        </div>
+        <div class="header-logo-left">
+          <div class="bella-title">BELLA CITY</div>
+          <div class="bella-sub">THE EGYPTIAN ITALIAN COMPANY FOR MODERN INDUSTRIES</div>
+        </div>
+      </div>
+
+      <div class="doc-title">أذن صرف بضاعة (مبيعات بولي) : من مخزن التسليم ${stockName}</div>
+
+      <div class="doc-meta">
+        <div class="meta-col">
+          <div><span class="lbl">رقم المستند :</span> ${cashSer}</div>
+          <div><span class="lbl">رقم العميل :</span> ${cvId}</div>
+          <div><span class="lbl">الهاتف :</span> ${cvPhone}</div>
+          <div><span class="lbl">العنوان :</span> ${cvAddress}</div>
+          <div><span class="lbl">المستند :</span> ${catName}</div>
+        </div>
+        <div class="meta-col" style="text-align: right;">
+          <div><span class="lbl">التاريخ :</span> ${docDate}</div>
+          <div><span class="lbl">الاسم :</span> ${cvName}</div>
+        </div>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 6%;">م</th>
+            <th style="width: 20%;">كود الصنف</th>
+            <th style="width: 50%;">اسم الصنف</th>
+            <th style="width: 12%;">الوحدة</th>
+            <th style="width: 12%;">الكمية</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((it, i) => `
+            <tr>
+              <td>${it.row_no || (i + 1)}</td>
+              <td>${it.item_id || ''}</td>
+              <td class="name-cell">${it.item_name || ''}</td>
+              <td>${it.item_unit || ''}</td>
+              <td>${it.item_qty != null ? Number(it.item_qty) : 0}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="page-bottom-bar">
+      <div>صفحة 1 من 1</div>
+      <div dir="ltr">${timeStr}</div>
+    </div>
+  </div>
+
+
+  <!-- ════════════════ PAGE 3: أذن استلام بضاعة ════════════════ -->
+  <div class="page">
+    <div>
+      <div class="header-banner">
+        <div class="header-logo-right">
+          <div class="logo-text-red">بلاستي</div>
+          <div class="company-sub">الشركة المصرية الإيطالية للصناعات الحديثة</div>
+        </div>
+        <div class="header-logo-left">
+          <div class="bella-title">BELLA CITY</div>
+          <div class="bella-sub">THE EGYPTIAN ITALIAN COMPANY FOR MODERN INDUSTRIES</div>
+        </div>
+      </div>
+
+      <div class="doc-title">أذن استلام بضاعة</div>
+
+      <div class="doc-meta">
+        <div class="meta-col">
+          <div><span class="lbl">رقم المستند :</span> ${cashSer}</div>
+          <div><span class="lbl">رقم العميل :</span> ${cvId}</div>
+          <div><span class="lbl">الهاتف :</span> ${cvPhone}</div>
+          <div><span class="lbl">العنوان :</span> ${cvAddress}</div>
+        </div>
+        <div class="meta-col" style="text-align: right;">
+          <div><span class="lbl">التاريخ :</span> ${docDate}</div>
+          <div><span class="lbl">الاسم :</span> ${cvName}</div>
+        </div>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 6%;">م</th>
+            <th style="width: 20%;">كود الصنف</th>
+            <th style="width: 50%;">اسم الصنف</th>
+            <th style="width: 12%;">الوحدة</th>
+            <th style="width: 12%;">الكمية</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((it, i) => `
+            <tr>
+              <td>${it.row_no || (i + 1)}</td>
+              <td>${it.item_id || ''}</td>
+              <td class="name-cell">${it.item_name || ''}</td>
+              <td>${it.item_unit || ''}</td>
+              <td>${it.item_qty != null ? Number(it.item_qty) : 0}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <div class="ack-block">
+        <p>أستلمت أنا الموقع أدناه البضاعة كاملة ومطابقة للمواصفات .</p>
+        <div class="ack-lines">
+          <div><strong>الأسم :</strong> .........................</div>
+          <div><strong>التوقيع :</strong> .........................</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-bottom-bar">
+      <div>صفحة 1 من 1</div>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 350);
+    };
+  </script>
+</body>
+</html>`;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
 

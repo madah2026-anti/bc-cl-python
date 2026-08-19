@@ -8,14 +8,20 @@ import { animateNumber } from '../utils/helpers.js';
  * Fetch and display authenticated user details
  */
 export async function loadUser() {
+  const sidebarName = document.getElementById('userNameSidebar');
   try {
     const res = await fetch('/api/me');
-    if (!res.ok) return;
+    if (!res.ok) {
+      if (sidebarName) sidebarName.textContent = 'زائر';
+      return;
+    }
     const { user } = await res.json();
-    if (!user) return;
+    if (!user) {
+      if (sidebarName) sidebarName.textContent = 'زائر';
+      return;
+    }
 
     const welcomeEl = document.getElementById('welcomeUsername');
-    const sidebarName = document.getElementById('userNameSidebar');
     const sidebarAvatar = document.getElementById('userAvatarSidebar');
 
     const name = user.username || '';
@@ -24,6 +30,7 @@ export async function loadUser() {
     if (sidebarAvatar) sidebarAvatar.textContent = name ? name.charAt(0).toUpperCase() : 'U';
   } catch (e) {
     console.error('Failed to load user:', e);
+    if (sidebarName) sidebarName.textContent = 'زائر';
   }
 }
 

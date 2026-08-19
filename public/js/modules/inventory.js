@@ -32,7 +32,11 @@ export function openInventorySubView(subKey) {
     if (subKey === 'warehouses') loadWarehouses();
     else if (subKey === 'items-groups') loadItemGroups();
     else if (subKey === 'items') loadItems();
-    else if (subKey === 'adjustments-up') loadAdjustmentsUp();
+  } else if (subKey === 'adjustments-up' || subKey === 'adjustments-down') {
+    currentAdjCat = (subKey === 'adjustments-down') ? 43 : 12;
+    const adjView = document.getElementById('inventory-sub-adjustments');
+    if (adjView) adjView.style.display = '';
+    loadAdjustments(currentAdjCat);
   }
 }
 
@@ -288,11 +292,14 @@ export async function loadItems(search = '', filterGroup = '') {
   }
 }
 
-// ── ADJUSTMENTS UP (تسوية زيادة) CRUD & SEARCH ─────────────────
+// ── UNIFIED INVENTORY ADJUSTMENTS (زيادة / تخفيض) CRUD ────────
 
-let adjustmentsUpData = [];
-let adjUpItemRows = [];
-let _adjUpRowSeq = 0;
+let currentAdjCat = 12; // 12 for Adjustments Up, 43 for Adjustments Down
+let adjustmentsData = [];
+let adjItemRows = [];
+let _adjRowSeq = 0;
+let currentAdjDetails = null;
+let editingAdjSer = null;
 let masterWarehousesCache = null;
 let masterItemsCache = null;
 
@@ -458,45 +465,60 @@ function initCombo({ inputEl, hiddenEl, dropdownEl, getLocalData, onSelect, port
   return { selectOption, getAllOptions: () => allOptions };
 }
 
-export async function loadAdjustmentsUp(search = '') {
-  const tableBody = document.getElementById('adjustmentsUpTableBody');
-  if (!tableBody) return;
+export async function loadAdjustments(cash_cat = currentAdjCat, search = '') {
+  currentAdjCat = cash_cat;
+  const tableBody = document.getElementById('adjustmentsTableBody');
+  const titleEl = document.getElementById('adjListTitle');
+  const addBtnText = document.getElementById('btnAddAdjText');
 
+  if (titleEl) titleEl.textContent = (cash_cat === 43) ? 'سجل تسويات التخفيض' : 'سجل تسويات الزيادة';
+  if (addBtnText) addBtnText.textContent = (cash_cat === 43) ? 'إضافة تسوية تخفيض' : 'إضافة تسوية زيادة';
+
+  if (!tableBody) return;
   tableBody.innerHTML = '<tr><td colspan="4" class="table-loading">جاري تحميل البيانات…</td></tr>';
 
   try {
-    let url = '/api/inventory/adjustments-up';
-    if (search) url += `?search=${encodeURIComponent(search)}`;
+    const endpoint = (cash_cat === 43) ? '/api/inventory/adjustments-down' : '/api/inventory/adjustments-up';
+    let url = search ? `${endpoint}?search=${encodeURIComponent(search)}` : endpoint;
 
     const res = await fetch(url);
     if (!res.ok) throw new Error('Network error');
     const json = await res.json();
     if (!json.success) throw new Error(json.error);
 
-    adjustmentsUpData = json.data || [];
-    renderAdjustmentsUpTable(adjustmentsUpData);
+    adjustmentsData = json.data || [];
+    renderAdjustmentsTable(adjustmentsData);
   } catch (err) {
-    console.error('Load adjustments up error:', err);
-    tableBody.innerHTML = '<tr><td colspan="4" class="table-empty">خطأ في تحميل تسويات الزيادة</td></tr>';
+    console.error('Load adjustments error:', err);
+    tableBody.innerHTML = '<tr><td colspan="4" class="table-empty">خطأ في تحميل بيانات التسوية</td></tr>';
   }
 }
 
-function renderAdjustmentsUpTable(data) {
-  const tableBody = document.getElementById('adjustmentsUpTableBody');
-  const countEl = document.getElementById('adjustmentsUpCount');
-  const invSubAdjUpCountEl = document.getElementById('invSubAdjUpCount');
-  const searchInput = document.getElementById('adjustmentsUpSearch');
+// Backward compatibility alias functions
+export function loadAdjustmentsUp(search = '') { return loadAdjustments(12, search); }
+export function loadAdjustmentsDown(search = '') { return loadAdjustments(43, search); }
+
+function renderAdjustmentsTable(data) {
+  const tableBody = document.getElementById('adjustmentsTableBody');
+  const countEl = document.getElementById('adjustmentsCount');
+  const invSubCountEl = (currentAdjCat === 43)
+    ? document.getElementById('invSubAdjDownCount')
+    : document.getElementById('invSubAdjUpCount');
+  const searchInput = document.getElementById('adjustmentsSearch');
 
   if (!tableBody) return;
   if (countEl) countEl.textContent = data.length.toLocaleString('ar-SA');
-  if (invSubAdjUpCountEl && (!searchInput || !searchInput.value.trim())) {
-    invSubAdjUpCountEl.textContent = data.length.toLocaleString('ar-SA');
+  if (invSubCountEl && (!searchInput || !searchInput.value.trim())) {
+    invSubCountEl.textContent = data.length.toLocaleString('ar-SA');
   }
 
   if (!data || data.length === 0) {
-    tableBody.innerHTML = '<tr><td colspan="4" class="table-empty">لا توجد تسويات زيادة مسجلة</td></tr>';
+    const emptyMsg = (currentAdjCat === 43) ? 'لا توجد تسويات تخفيض مسجلة' : 'لا توجد تسويات زيادة مسجلة';
+    tableBody.innerHTML = `<tr><td colspan="4" class="table-empty">${emptyMsg}</td></tr>`;
     return;
   }
+
+  const linkColor = (currentAdjCat === 43) ? '#f87171' : '#38bdf8';
 
   tableBody.innerHTML = data.map(doc => {
     const formattedDate = doc.cash_date ? new Date(doc.cash_date).toLocaleDateString('ar-SA') : '–';
@@ -504,7 +526,7 @@ function renderAdjustmentsUpTable(data) {
     return `
       <tr>
         <td>
-          <a href="#" class="cell-id adj-up-link" data-ser="${escapeHtml(String(doc.cash_ser || ''))}" style="color: #38bdf8; text-decoration: underline; font-weight: 600; cursor: pointer;">
+          <a href="#" class="cell-id adj-link" data-ser="${escapeHtml(String(doc.cash_ser || ''))}" style="color: ${linkColor}; text-decoration: underline; font-weight: 600; cursor: pointer;">
             ${escapeHtml(String(doc.cash_ser || ''))}
           </a>
         </td>
@@ -516,38 +538,59 @@ function renderAdjustmentsUpTable(data) {
   }).join('');
 }
 
-export async function openAdjustmentUpDetailsView(cashSer) {
+export async function openAdjustmentDetailsView(cashSer) {
   const overview = document.getElementById('inventory-overview');
   if (overview) overview.style.display = 'none';
   document.querySelectorAll('.inventory-sub-view').forEach(v => v.style.display = 'none');
 
-  const detailsView = document.getElementById('inventory-sub-adj-up-details');
+  const detailsView = document.getElementById('inventory-sub-adj-details');
   if (!detailsView) return;
   detailsView.style.display = '';
 
-  const elSerBadge = document.getElementById('adjUpDetailSerBadge');
-  const elSer = document.getElementById('adjUpDetailSer');
-  const elDate = document.getElementById('adjUpDetailDate');
-  const elStock = document.getElementById('adjUpDetailStock');
-  const elNotes = document.getElementById('adjUpDetailNotes');
-  const itemsBody = document.getElementById('adjUpDetailItemsBody');
+  const isDown = (currentAdjCat === 43);
+  const accentColor = isDown ? '#f87171' : '#38bdf8';
+  const badgeBg = isDown ? 'rgba(248, 113, 113, 0.15)' : 'rgba(56, 189, 248, 0.15)';
 
-  if (elSerBadge) elSerBadge.textContent = String(cashSer);
-  if (elSer) elSer.textContent = String(cashSer);
+  const elTitle = document.getElementById('adjDetailTitle');
+  const elSerBadge = document.getElementById('adjDetailSerBadge');
+  const elSer = document.getElementById('adjDetailSer');
+  const elDate = document.getElementById('adjDetailDate');
+  const elStock = document.getElementById('adjDetailStock');
+  const elNotes = document.getElementById('adjDetailNotes');
+  const itemsBody = document.getElementById('adjDetailItemsBody');
+  const btnEdit = document.getElementById('btnEditAdj');
+
+  if (elTitle) elTitle.textContent = isDown ? 'تفاصيل تسوية التخفيض' : 'تفاصيل تسوية الزيادة';
+  if (elSerBadge) {
+    elSerBadge.textContent = String(cashSer);
+    elSerBadge.style.color = accentColor;
+    elSerBadge.style.background = badgeBg;
+  }
+  if (elSer) {
+    elSer.textContent = String(cashSer);
+    elSer.style.color = accentColor;
+  }
+  if (btnEdit) {
+    btnEdit.style.color = accentColor;
+    btnEdit.style.background = badgeBg;
+    btnEdit.style.borderColor = isDown ? 'rgba(248, 113, 113, 0.3)' : 'rgba(56, 189, 248, 0.3)';
+  }
+
   if (elDate) elDate.textContent = '–';
   if (elStock) elStock.textContent = '–';
   if (elNotes) elNotes.textContent = '–';
   if (itemsBody) itemsBody.innerHTML = '<tr><td colspan="5" class="table-loading">جاري تحميل أصناف التسوية…</td></tr>';
 
   try {
-    const res = await fetch(`/api/inventory/adjustment/${cashSer}`);
+    const endpoint = isDown ? `/api/inventory/adjustment-down/${cashSer}` : `/api/inventory/adjustment/${cashSer}`;
+    const res = await fetch(endpoint);
     if (!res.ok) throw new Error('Document not found');
     const json = await res.json();
     if (!json.success || !json.header) throw new Error(json.error || 'فشل تحميل بيانات التسوية');
 
     const header = json.header;
     const items = json.items || [];
-    currentAdjUpDetails = { header, items };
+    currentAdjDetails = { header, items };
 
     if (elSer) elSer.textContent = String(header.cash_ser || '–');
     if (elDate) elDate.textContent = header.cash_date ? new Date(header.cash_date).toLocaleDateString('ar-SA') : '–';
@@ -566,7 +609,7 @@ export async function openAdjustmentUpDetailsView(cashSer) {
               <td><span class="cell-id">${escapeHtml(String(item.item_id || ''))}</span></td>
               <td class="font-bold">${escapeHtml(item.item_name || '–')}</td>
               <td>${escapeHtml(item.item_unit || '–')}</td>
-              <td class="font-bold" style="color: #38bdf8;">${Number(item.item_qty || 0).toLocaleString('ar-SA')}</td>
+              <td class="font-bold" style="color: ${accentColor};">${Number(item.item_qty || 0).toLocaleString('ar-SA')}</td>
             </tr>
           `;
         }).join('');
@@ -578,40 +621,46 @@ export async function openAdjustmentUpDetailsView(cashSer) {
   }
 }
 
-let currentAdjUpDetails = null;
-let editingAdjUpSer = null;
-
-export async function openCreateAdjustmentUpView(editData = null) {
+export async function openCreateAdjustmentView(editData = null) {
   const overview = document.getElementById('inventory-overview');
   if (overview) overview.style.display = 'none';
   document.querySelectorAll('.inventory-sub-view').forEach(v => v.style.display = 'none');
 
-  const createView = document.getElementById('inventory-sub-create-adj-up');
+  const createView = document.getElementById('inventory-sub-create-adj');
   if (!createView) return;
   createView.style.display = '';
 
-  adjUpItemRows = [];
-  document.getElementById('adjUpItemsBody').innerHTML = '';
+  adjItemRows = [];
+  document.getElementById('adjItemsBody').innerHTML = '';
 
-  const headerTitle = createView.querySelector('.card-header h3');
+  const isDown = (currentAdjCat === 43);
+  const accentColor = isDown ? '#f87171' : '#38bdf8';
+  const badgeBg = isDown ? 'rgba(248, 113, 113, 0.12)' : 'rgba(56, 189, 248, 0.12)';
+  const docTypeName = isDown ? 'تسوية تخفيض' : 'تسوية زيادة';
+
+  const titleEl = document.getElementById('adjCreateTitle');
+  const badgeEl = document.getElementById('adjNextSerBadge');
+  if (badgeEl) {
+    badgeEl.style.color = accentColor;
+    badgeEl.style.background = badgeBg;
+  }
 
   if (editData && editData.header) {
     const h = editData.header;
-    editingAdjUpSer = h.cash_ser;
-    if (headerTitle) {
-      headerTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> تعديل تسوية زيادة رقم #${h.cash_ser}`;
+    editingAdjSer = h.cash_ser;
+    if (titleEl) {
+      titleEl.innerHTML = `تعديل ${docTypeName} رقم #${h.cash_ser}`;
     }
-    const badgeEl = document.getElementById('adjUpNextSerBadge');
     if (badgeEl) badgeEl.textContent = `# ${h.cash_ser}`;
 
-    document.getElementById('adjUpDate').value = h.cash_date ? String(h.cash_date).split('T')[0] : new Date().toISOString().split('T')[0];
-    document.getElementById('adjUpStockSearch').value = h.cash_stock_name || '';
-    document.getElementById('adjUpStockId').value = h.cash_stock_id || '';
-    document.getElementById('adjUpNotes').value = h.cash_notes || '';
+    document.getElementById('adjDate').value = h.cash_date ? String(h.cash_date).split('T')[0] : new Date().toISOString().split('T')[0];
+    document.getElementById('adjStockSearch').value = h.cash_stock_name || '';
+    document.getElementById('adjStockId').value = h.cash_stock_id || '';
+    document.getElementById('adjNotes').value = h.cash_notes || '';
 
     if (editData.items && editData.items.length) {
       editData.items.forEach(item => {
-        addAdjUpItemRow({
+        addAdjItemRow({
           item_id: item.item_id,
           item_name: item.item_name,
           item_unit: item.item_unit,
@@ -619,23 +668,23 @@ export async function openCreateAdjustmentUpView(editData = null) {
         });
       });
     } else {
-      addAdjUpItemRow();
+      addAdjItemRow();
     }
   } else {
-    editingAdjUpSer = null;
-    if (headerTitle) {
-      headerTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> إضافة تسوية زيادة جديدة`;
+    editingAdjSer = null;
+    if (titleEl) {
+      titleEl.textContent = `إضافة ${docTypeName} جديدة`;
     }
-    document.getElementById('adjUpDate').value = new Date().toISOString().split('T')[0];
-    document.getElementById('adjUpStockSearch').value = '';
-    document.getElementById('adjUpStockId').value = '';
-    document.getElementById('adjUpNotes').value = '';
+    document.getElementById('adjDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('adjStockSearch').value = '';
+    document.getElementById('adjStockId').value = '';
+    document.getElementById('adjNotes').value = '';
 
-    const badgeEl = document.getElementById('adjUpNextSerBadge');
     if (badgeEl) badgeEl.textContent = 'جاري التحميل…';
 
     try {
-      const res = await fetch('/api/inventory/adjustments-up/next-ser');
+      const endpoint = isDown ? '/api/inventory/adjustments-down/next-ser' : '/api/inventory/adjustments-up/next-ser';
+      const res = await fetch(endpoint);
       const json = await res.json();
       if (json.success && badgeEl) {
         badgeEl.textContent = `# ${json.next_ser}`;
@@ -644,16 +693,16 @@ export async function openCreateAdjustmentUpView(editData = null) {
       if (badgeEl) badgeEl.textContent = 'تلقائي';
     }
 
-    addAdjUpItemRow();
+    addAdjItemRow();
   }
 }
 
-function addAdjUpItemRow(initialVal = null) {
+function addAdjItemRow(initialVal = null) {
   if (initialVal instanceof Event) initialVal = null;
   const isNewItem = !initialVal;
 
-  const rowId = ++_adjUpRowSeq;
-  adjUpItemRows.push({
+  const rowId = ++_adjRowSeq;
+  adjItemRows.push({
     rowId,
     item_id: initialVal ? initialVal.item_id : null,
     item_name: initialVal ? initialVal.item_name : '',
@@ -661,7 +710,7 @@ function addAdjUpItemRow(initialVal = null) {
     item_qty: initialVal ? (initialVal.item_qty || 1) : 1
   });
 
-  const tbody = document.getElementById('adjUpItemsBody');
+  const tbody = document.getElementById('adjItemsBody');
   if (!tbody) return;
 
   const tr = document.createElement('tr');
@@ -676,7 +725,7 @@ function addAdjUpItemRow(initialVal = null) {
         <input type="text" class="cell-input item-search-input form-input"
           placeholder="ابحث باسم الصنف أو الكود…" autocomplete="off"
           data-row="${rowId}" value="${escapeHtml(initialVal?.item_name || '')}">
-        <div class="combo-dropdown item-combo-dropdown" id="adjUpItemDrop_${rowId}"></div>
+        <div class="combo-dropdown item-combo-dropdown" id="adjItemDrop_${rowId}"></div>
       </div>
     </td>
     <td><span class="item-unit-cell" style="color:var(--text-muted);font-size:0.9rem;">${escapeHtml(initialVal?.item_unit || '–')}</span></td>
@@ -702,7 +751,7 @@ function addAdjUpItemRow(initialVal = null) {
       const cached = combo.getAllOptions().find(o => String(o.id) === String(id));
       const unit = cached ? (cached.unit || '–') : '–';
       unitCell.textContent = unit;
-      const row = adjUpItemRows.find(r => r.rowId === rowId);
+      const row = adjItemRows.find(r => r.rowId === rowId);
       if (row) {
         row.item_id = id;
         row.item_name = name;
@@ -712,14 +761,14 @@ function addAdjUpItemRow(initialVal = null) {
   });
 
   qtyInput.addEventListener('input', () => {
-    const row = adjUpItemRows.find(r => r.rowId === rowId);
+    const row = adjItemRows.find(r => r.rowId === rowId);
     if (row) row.item_qty = parseFloat(qtyInput.value) || 0;
   });
 
   tr.querySelector('.btn-del-row').addEventListener('click', () => {
-    adjUpItemRows = adjUpItemRows.filter(r => r.rowId !== rowId);
+    adjItemRows = adjItemRows.filter(r => r.rowId !== rowId);
     tr.remove();
-    updateAdjUpRowNumbers();
+    updateAdjRowNumbers();
   });
 
   if (isNewItem && searchInput) {
@@ -729,8 +778,8 @@ function addAdjUpItemRow(initialVal = null) {
   }
 }
 
-function updateAdjUpRowNumbers() {
-  const tbody = document.getElementById('adjUpItemsBody');
+function updateAdjRowNumbers() {
+  const tbody = document.getElementById('adjItemsBody');
   if (!tbody) return;
   const rows = tbody.querySelectorAll('tr');
   rows.forEach((r, idx) => {
@@ -739,24 +788,28 @@ function updateAdjUpRowNumbers() {
   });
 }
 
-async function saveAdjustmentUp() {
-  const cash_date = document.getElementById('adjUpDate')?.value;
-  const cash_stock_id = document.getElementById('adjUpStockId')?.value;
-  const cash_stock_name = document.getElementById('adjUpStockSearch')?.value?.trim();
-  const cash_notes = document.getElementById('adjUpNotes')?.value?.trim();
+async function saveAdjustment() {
+  const cash_date = document.getElementById('adjDate')?.value;
+  const cash_stock_id = document.getElementById('adjStockId')?.value;
+  const cash_stock_name = document.getElementById('adjStockSearch')?.value?.trim();
+  const cash_notes = document.getElementById('adjNotes')?.value?.trim();
 
   if (!cash_date) {
     showToast('يرجى تحديد تاريخ المستند', 'danger');
     return;
   }
 
-  const validItems = adjUpItemRows.filter(r => r.item_id && r.item_qty > 0);
+  const validItems = adjItemRows.filter(r => r.item_id && r.item_qty > 0);
   if (validItems.length === 0) {
     showToast('يرجى اختيار صنف واحد على الأقل وتحديد كميته', 'danger');
     return;
   }
 
+  const isDown = (currentAdjCat === 43);
+  const docTypeName = isDown ? 'تسوية التخفيض' : 'تسوية الزيادة';
+
   const payload = {
+    cash_cat: currentAdjCat,
     cash_date,
     cash_stock_id: cash_stock_id || null,
     cash_stock_name: cash_stock_name || '',
@@ -771,8 +824,9 @@ async function saveAdjustmentUp() {
   };
 
   try {
-    const url = editingAdjUpSer ? `/api/inventory/adjustment/${editingAdjUpSer}` : '/api/inventory/adjustment';
-    const method = editingAdjUpSer ? 'PUT' : 'POST';
+    const baseEndpoint = isDown ? '/api/inventory/adjustment-down' : '/api/inventory/adjustment';
+    const url = editingAdjSer ? `${baseEndpoint}/${editingAdjSer}` : baseEndpoint;
+    const method = editingAdjSer ? 'PUT' : 'POST';
 
     const res = await fetch(url, {
       method: method,
@@ -781,17 +835,19 @@ async function saveAdjustmentUp() {
     });
     const json = await res.json();
     if (!json.success) {
-      showToast(json.error || 'فشل حفظ تسوية الزيادة', 'danger');
+      showToast(json.error || `فشل حفظ ${docTypeName}`, 'danger');
       return;
     }
 
-    showToast(json.message || 'تم حفظ تسوية الزيادة بنجاح', 'success');
-    openInventorySubView('adjustments-up');
+    showToast(json.message || `تم حفظ ${docTypeName} بنجاح`, 'success');
+    const subKey = isDown ? 'adjustments-down' : 'adjustments-up';
+    openInventorySubView(subKey);
   } catch (err) {
-    console.error('Save adjustment up error:', err);
-    showToast('حدث خطأ أثناء حفظ تسوية الزيادة', 'danger');
+    console.error('Save adjustment error:', err);
+    showToast(`حدث خطأ أثناء حفظ ${docTypeName}`, 'danger');
   }
 }
+
 
 // ── INITIALIZE INVENTORY MODULE ──────────────────────────
 
@@ -834,53 +890,54 @@ export function initInventoryModule() {
     });
   });
 
-  // Adjustments Up Search input listener
-  const adjustmentsUpSearch = document.getElementById('adjustmentsUpSearch');
-  if (adjustmentsUpSearch) {
-    adjustmentsUpSearch.addEventListener('input', debounce(() => {
-      loadAdjustmentsUp(adjustmentsUpSearch.value.trim());
+  // Adjustments Search input listener
+  const adjustmentsSearch = document.getElementById('adjustmentsSearch');
+  if (adjustmentsSearch) {
+    adjustmentsSearch.addEventListener('input', debounce(() => {
+      loadAdjustments(currentAdjCat, adjustmentsSearch.value.trim());
     }, 300));
   }
 
-  // Adjustments Up Add New button
-  const btnAddAdjustmentUp = document.getElementById('btnAddAdjustmentUp');
-  if (btnAddAdjustmentUp) {
-    btnAddAdjustmentUp.addEventListener('click', () => {
-      openCreateAdjustmentUpView();
+  // Adjustments Add New button
+  const btnAddAdjustment = document.getElementById('btnAddAdjustment');
+  if (btnAddAdjustment) {
+    btnAddAdjustment.addEventListener('click', () => {
+      openCreateAdjustmentView();
     });
   }
 
-  // Adjustments Up document link delegation
+  // Adjustments document link delegation
   document.addEventListener('click', (e) => {
-    const link = e.target.closest('.adj-up-link');
+    const link = e.target.closest('.adj-link');
     if (link) {
       e.preventDefault();
       const ser = link.dataset.ser;
-      if (ser) openAdjustmentUpDetailsView(ser);
+      if (ser) openAdjustmentDetailsView(ser);
     }
   });
 
-  // Adjustments Up edit button
-  const btnEditAdjUp = document.getElementById('btnEditAdjUp');
-  if (btnEditAdjUp) {
-    btnEditAdjUp.addEventListener('click', () => {
-      if (currentAdjUpDetails) {
-        openCreateAdjustmentUpView(currentAdjUpDetails);
+  // Adjustments edit button
+  const btnEditAdj = document.getElementById('btnEditAdj');
+  if (btnEditAdj) {
+    btnEditAdj.addEventListener('click', () => {
+      if (currentAdjDetails) {
+        openCreateAdjustmentView(currentAdjDetails);
       }
     });
   }
 
-  // Back from Create / Details of Adjustments Up
-  document.querySelectorAll('.btn-back-adj-up').forEach(btn => {
+  // Back from Create / Details of Adjustments
+  document.querySelectorAll('.btn-back-adj').forEach(btn => {
     btn.addEventListener('click', () => {
-      openInventorySubView('adjustments-up');
+      const subKey = (currentAdjCat === 43) ? 'adjustments-down' : 'adjustments-up';
+      openInventorySubView(subKey);
     });
   });
 
-  // Stock Search combo in Create Adjustment Up
-  const stockSearchInput = document.getElementById('adjUpStockSearch');
-  const stockHiddenId = document.getElementById('adjUpStockId');
-  const stockDropdown = document.getElementById('adjUpStockDropdown');
+  // Stock Search combo in Create Adjustment
+  const stockSearchInput = document.getElementById('adjStockSearch');
+  const stockHiddenId = document.getElementById('adjStockId');
+  const stockDropdown = document.getElementById('adjStockDropdown');
   if (stockSearchInput && stockDropdown) {
     initCombo({
       inputEl: stockSearchInput,
@@ -890,16 +947,16 @@ export function initInventoryModule() {
     });
   }
 
-  // Add Item Row button in Create Adjustment Up
-  const btnAddAdjUpRow = document.getElementById('btnAddAdjUpRow');
-  if (btnAddAdjUpRow) {
-    btnAddAdjUpRow.addEventListener('click', addAdjUpItemRow);
+  // Add Item Row button in Create Adjustment
+  const btnAddAdjRow = document.getElementById('btnAddAdjRow');
+  if (btnAddAdjRow) {
+    btnAddAdjRow.addEventListener('click', addAdjItemRow);
   }
 
-  // Save button in Create Adjustment Up
-  const btnSaveAdjUp = document.getElementById('btnSaveAdjUp');
-  if (btnSaveAdjUp) {
-    btnSaveAdjUp.addEventListener('click', saveAdjustmentUp);
+  // Save button in Create Adjustment
+  const btnSaveAdj = document.getElementById('btnSaveAdj');
+  if (btnSaveAdj) {
+    btnSaveAdj.addEventListener('click', saveAdjustment);
   }
 
   // Search input listeners

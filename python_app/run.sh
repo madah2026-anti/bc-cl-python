@@ -1,6 +1,6 @@
 #!/bin/bash
 # Script to run BC ERP Python FastAPI server 
-PORT=${PORT:-${PYTHON_PORT:-3000}}
+PORT=${PORT:-${PYTHON_PORT:-5000}}
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
