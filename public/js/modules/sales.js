@@ -888,7 +888,7 @@ function updateDiscountFromRules() {
   updateCreateDocTotals();
 }
 
-let currentSalesDocDetails = null;
+
 let editingSalesSer = null;
 
 export function openCreateDocView(editData = null) {
@@ -1152,7 +1152,7 @@ function addItemRow(initialVal = null) {
     </td>
     <td><span class="item-unit-cell" style="color:var(--text-muted);font-size:12px;">${escapeHtml(initialVal?.item_unit || '–')}</span></td>
     <td><input type="number" class="cell-input item-qty-input" value="${initQty}" min="0.001" step="any" dir="ltr" data-row="${rowId}"></td>
-    <td><input type="number" class="cell-input item-price-input" value="${initPrice}" min="0" step="any" dir="ltr" data-row="${rowId}"></td>
+    <td><input type="number" class="cell-input item-price-input" value="${initPrice}" min="0" step="any" dir="ltr" data-row="${rowId}" readonly tabindex="-1" style="background: rgba(255,255,255,0.03); opacity: 0.8; cursor: not-allowed;"></td>
     <td><span class="cell-tot item-tot-cell" id="rowTot_${rowId}">${initTot.toLocaleString('ar-SA', { minimumFractionDigits: 2 })}</span></td>
     <td>
       <button type="button" class="btn-del-row" data-row="${rowId}" title="حذف">✕</button>
@@ -1172,9 +1172,26 @@ function addItemRow(initialVal = null) {
     hiddenEl: { value: null },   // managed via onSelect
     dropdownEl,
     portal: true,              // portal mode → never clipped by table overflow
-    getLocalData: filterItemsWithStock,
+    getLocalData: async (q) => {
+      const items = await filterItemsWithStock(q);
+      const usedIds = new Set(itemsRowData.filter(r => r.rowId !== rowId && r.item_id != null).map(r => String(r.item_id)));
+      return items.filter(i => !usedIds.has(String(i.item_id)));
+    },
     onSelect: (id, name) => {
-      // Use the cached allOptions from the combo – no extra network round-trip
+      const duplicate = itemsRowData.find(r => r.rowId !== rowId && String(r.item_id) === String(id));
+      if (duplicate) {
+        showToast(`الصنف (${name || id}) مضاف مسبقاً في المستند`, 'warning');
+        searchInput.value = '';
+        unitCell.textContent = '–';
+        priceInput.value = 0;
+        updateRow(rowId, {
+          item_id: null,
+          item_name: '',
+          item_unit: '',
+          item_price: 0
+        });
+        return;
+      }
       const cached = combo.getAllOptions().find(o => String(o.id) === String(id));
       if (cached) {
         unitCell.textContent = cached.unit || '–';
@@ -1395,6 +1412,7 @@ export function generateSalesDocumentPDF(docDetails) {
   const cvPhone = header.customer_phone || '';
   const cvAddress = header.customer_address || '';
   const catName = header.cash_cat_name || 'عرض';
+  const cash_notes = header.cash_notes || '';
   const stockName = header.cash_stock_name || 'مخزن التسليم بيلا سيتى';
 
   const amount = Number(header.cash_amount) || 0;
@@ -1414,7 +1432,7 @@ export function generateSalesDocumentPDF(docDetails) {
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>مستند مبيعات #${cashSer}</title>
+  <title>مستند ${catName}  #${cashSer}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
 
@@ -1515,8 +1533,8 @@ export function generateSalesDocumentPDF(docDetails) {
 
     /* ── Meta Section ── */
     .doc-meta {
-      display: flex;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: 42% 1fr;
       margin-bottom: 16px;
       font-size: 13px;
       font-weight: 700;
@@ -1628,7 +1646,7 @@ export function generateSalesDocumentPDF(docDetails) {
     <div>
       <div class="header-banner">
         <div class="header-logo-right">
-          <div class="logo-text-red">بلاستي</div>
+          <div class="logo-text-red">بيلاسيتي</div>
           <div class="company-sub">الشركة المصرية الإيطالية للصناعات الحديثة</div>
         </div>
         <div class="header-logo-left">
@@ -1645,7 +1663,7 @@ export function generateSalesDocumentPDF(docDetails) {
           <div><span class="lbl">رقم العميل :</span> ${cvId}</div>
           <div><span class="lbl">الهاتف :</span> ${cvPhone}</div>
           <div><span class="lbl">العنوان :</span> ${cvAddress}</div>
-          <div><span class="lbl">المستند :</span> ${catName}</div>
+          <div><span class="lbl">ملاحظات :</span> ${cash_notes}</div>
         </div>
         <div class="meta-col" style="text-align: right;">
           <div><span class="lbl">التاريخ :</span> ${docDate}</div>
@@ -1673,8 +1691,8 @@ export function generateSalesDocumentPDF(docDetails) {
               <td class="name-cell">${it.item_name || ''}</td>
               <td>${it.item_unit || ''}</td>
               <td>${it.item_qty != null ? Number(it.item_qty) : 0}</td>
-              <td>${it.item_price != null ? Number(it.item_price).toLocaleString('ar-EG', {minimumFractionDigits: 1, maximumFractionDigits: 3}) : '0'}</td>
-              <td>${it.cd_tot != null ? Number(it.cd_tot).toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '0'}</td>
+              <td>${it.item_price != null ? Number(it.item_price).toLocaleString('ar-EG', { minimumFractionDigits: 1, maximumFractionDigits: 3 }) : '0'}</td>
+              <td>${it.cd_tot != null ? Number(it.cd_tot).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -1684,15 +1702,15 @@ export function generateSalesDocumentPDF(docDetails) {
         <table class="totals-table">
           <tr>
             <td class="lbl">الاجمالي</td>
-            <td class="val">${grossAmount.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+            <td class="val">${grossAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
           </tr>
           <tr>
             <td class="lbl">الخصم</td>
-            <td class="val">${discount.toLocaleString('ar-EG', {minimumFractionDigits: 1, maximumFractionDigits: 2})}</td>
+            <td class="val">${discount.toLocaleString('ar-EG', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}</td>
           </tr>
           <tr>
             <td class="lbl">الصافي</td>
-            <td class="val">${amount.toLocaleString('ar-EG', {minimumFractionDigits: 1, maximumFractionDigits: 2})}</td>
+            <td class="val">${amount.toLocaleString('ar-EG', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}</td>
           </tr>
         </table>
       </div>
@@ -1704,7 +1722,7 @@ export function generateSalesDocumentPDF(docDetails) {
     </div>
 
     <div class="page-bottom-bar">
-      <div>صفحة 1 من 1</div>
+      <div>صفحة 1 من 3</div>
       <div dir="ltr">${timeStr}</div>
     </div>
   </div>
@@ -1715,7 +1733,7 @@ export function generateSalesDocumentPDF(docDetails) {
     <div>
       <div class="header-banner">
         <div class="header-logo-right">
-          <div class="logo-text-red">بلاستي</div>
+          <div class="logo-text-red">بيلاسيتي</div>
           <div class="company-sub">الشركة المصرية الإيطالية للصناعات الحديثة</div>
         </div>
         <div class="header-logo-left">
@@ -1724,7 +1742,7 @@ export function generateSalesDocumentPDF(docDetails) {
         </div>
       </div>
 
-      <div class="doc-title">أذن صرف بضاعة (مبيعات بولي) : من مخزن التسليم ${stockName}</div>
+      <div class="doc-title">أذن صرف بضاعة (${catName}) : من ${stockName}</div>
 
       <div class="doc-meta">
         <div class="meta-col">
@@ -1732,7 +1750,7 @@ export function generateSalesDocumentPDF(docDetails) {
           <div><span class="lbl">رقم العميل :</span> ${cvId}</div>
           <div><span class="lbl">الهاتف :</span> ${cvPhone}</div>
           <div><span class="lbl">العنوان :</span> ${cvAddress}</div>
-          <div><span class="lbl">المستند :</span> ${catName}</div>
+          <div><span class="lbl">ملاحظات :</span> ${cash_notes}</div>
         </div>
         <div class="meta-col" style="text-align: right;">
           <div><span class="lbl">التاريخ :</span> ${docDate}</div>
@@ -1765,7 +1783,7 @@ export function generateSalesDocumentPDF(docDetails) {
     </div>
 
     <div class="page-bottom-bar">
-      <div>صفحة 1 من 1</div>
+      <div>صفحة 2 من 3</div>
       <div dir="ltr">${timeStr}</div>
     </div>
   </div>
@@ -1776,7 +1794,7 @@ export function generateSalesDocumentPDF(docDetails) {
     <div>
       <div class="header-banner">
         <div class="header-logo-right">
-          <div class="logo-text-red">بلاستي</div>
+          <div class="logo-text-red">بيلاسيتي</div>
           <div class="company-sub">الشركة المصرية الإيطالية للصناعات الحديثة</div>
         </div>
         <div class="header-logo-left">
@@ -1833,7 +1851,7 @@ export function generateSalesDocumentPDF(docDetails) {
     </div>
 
     <div class="page-bottom-bar">
-      <div>صفحة 1 من 1</div>
+      <div>صفحة 3 من 3</div>
     </div>
   </div>
 

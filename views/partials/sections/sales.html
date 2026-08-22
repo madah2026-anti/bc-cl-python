@@ -10,7 +10,7 @@
             <line x1="12" y1="1" x2="12" y2="23" />
             <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
           </svg>
-          المبيعات
+          العملاء
         </h3>
         <div class="card-actions">
           <button class="btn-add btn-create-sales-doc" title="إضافة مستند جديد">
@@ -353,6 +353,13 @@
             style="background: rgba(99, 102, 241, 0.15); color: #818cf8; padding: 4px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;">–</span>
         </div>
         <div class="card-actions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <button type="button" id="btnPostSalesDoc"
+            style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            ترحيل
+          </button>
           <button type="button" id="btnPrintSalesDoc"
             style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 8px; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -363,13 +370,7 @@
             طباعة
           </button>
 
-          <button type="button" id="btnPostSalesDoc"
-            style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            ترحيل
-          </button>
+
 
           <button type="button" id="btnDeleteSalesDoc"
             style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 8px; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">

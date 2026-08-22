@@ -7,6 +7,7 @@ import { loadUser, loadStats } from './core/userStats.js';
 import { initCustomersModule } from './modules/customers.js';
 import { initSalesModule } from './modules/sales.js';
 import { initInventoryModule } from './modules/inventory.js';
+import { initReportsModule } from './modules/reports.js';
 import { initModalListeners } from './utils/modal.js';
 
 /**
@@ -28,6 +29,7 @@ function initApp() {
   initSalesModule();
   initInventoryModule();
   initCustomersModule();
+  initReportsModule();
 
   // Load user info & dashboard stats
   loadUser();

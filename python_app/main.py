@@ -3,7 +3,8 @@
 # ============================================================
 import os
 import re
-import urllib.parse
+import urllib.parse 
+from datetime import datetime, date
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -276,6 +277,120 @@ def get_items(request: Request):
         return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
     rows = db.query_all("SELECT * FROM items ORDER BY item_id ")
     return {"success": True, "data": rows}
+
+
+@app.get("/api/report-data")
+def get_report_data(request: Request, reportId: str = Query(""), category: str = Query("")):
+    user = get_session_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
+    
+    try:
+        rpt_id = int(reportId.strip())
+    except (ValueError, TypeError):
+        rpt_id = 0
+
+    sql = ""
+    
+    if rpt_id in (110, 130):
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 1 ORDER BY cf_t1"
+    elif rpt_id in (140, 260, 264, 265, 266, 280, 282):
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 18"
+    elif rpt_id in (250, 252, 270):
+        sql = "SELECT item_name AS cf_t1, item_id AS cf_id FROM items"
+    elif rpt_id == 268:
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 1"
+    elif rpt_id == 290:
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 62"
+    elif rpt_id in (410, 415, 440, 450, 955, 956):
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 4 ORDER BY cf_t1"
+    elif rpt_id == 416:
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 42 ORDER BY cf_t1"
+    elif rpt_id == 417:
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 52 ORDER BY cf_t1"
+    elif rpt_id in (425, 550, 551, 552, 992):
+        sql = "SELECT DISTINCT gov_name AS cf_t1, 0 AS cf_id FROM gov_city ORDER BY gov_name"
+    elif rpt_id in (930, 935, 945, 947, 960, 974, 996):
+        sql = "SELECT DISTINCT gov_name AS cf_t1, 0 AS cf_id FROM gov_city"
+    elif rpt_id in (430, 435):
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 28 ORDER BY cf_t1"
+    elif rpt_id == 436:
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 26 ORDER BY cf_t1"
+    elif rpt_id in (510, 585):
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 25 ORDER BY cf_t1"
+    elif rpt_id in (520, 580, 590):
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 27 ORDER BY cf_t1"
+    elif rpt_id in (540, 993):
+        sql = "SELECT city_name AS cf_t1, 0 AS cf_id FROM gov_city ORDER BY city_name"
+    elif rpt_id in (560, 565):
+        sql = "SELECT item_name AS cf_t1, item_id AS cf_id FROM items ORDER BY item_name"
+    elif 710 <= rpt_id <= 719:
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 7 ORDER BY cf_t1"
+    elif rpt_id == 730:
+        sql = "SELECT cf_t3 AS cf_t1, cf_id AS cf_id FROM gl_data WHERE cf_n1 = 3"
+    elif rpt_id in (920, 922, 936, 946, 948):
+        sql = "SELECT city_name AS cf_t1, 0 AS cf_id FROM gov_city ORDER BY gov_name"
+    elif rpt_id in (940, 965, 966, 967, 991, 995):
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 15 ORDER BY cf_t1"
+    elif rpt_id in (950, 953, 963):
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 38 ORDER BY cf_t1"
+    elif rpt_id == 957:
+        sql = "SELECT sub_cust AS cf_t1, 0 AS cf_id FROM grnt WHERE LENGTH(sub_cust) > 0 GROUP BY sub_cust ORDER BY sub_cust"
+    elif rpt_id == 985:
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 40 ORDER BY cf_t1"
+    elif rpt_id == 986:
+        sql = "SELECT cf_t1, cf_id FROM c_data WHERE cf_n1 > 1 AND cf_cat = 75 ORDER BY cf_t1"
+
+    if sql:
+        rows = db.query_all(sql)
+    else:
+        rows = []
+
+    return JSONResponse(content=rows)
+
+
+@app.get("/api/report-data-260")
+def get_report_data_260(request: Request, warehouse_id: str = Query(""), to_date: str = Query(""), from_date: str = Query("")):
+    user = get_session_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"success": False, "error": "غير مصرح"})
+    
+    try:
+        wh_id = int(warehouse_id.strip()) if warehouse_id else 0
+    except (ValueError, TypeError):
+        wh_id = 0
+
+    clean_to_date = to_date.strip() if to_date and to_date != "غير محدد" else ""
+    
+    params = []
+    where_date = ""
+    if clean_to_date:
+        where_date = " WHERE cd_date <= %s"
+        params.append(clean_to_date)
+        
+    where_stock = ""
+    if wh_id > 0:
+        where_stock = " AND stock_id = %s" if where_date else " WHERE stock_id = %s"
+        params.append(wh_id)
+
+    sql = f"""
+        SELECT 
+            i.item_id, 
+            COALESCE(i.item_name, 'صنف غير معروف') AS item_name, 
+            COALESCE(i.item_unit, '-') AS item_unit, 
+            sub.itmqty_bal 
+        FROM (
+            SELECT item_id, SUM(item_qty) AS itmqty_bal 
+            FROM cash_details 
+            {where_date} {where_stock}
+            GROUP BY item_id
+        ) sub 
+        LEFT JOIN items i ON i.item_id = sub.item_id 
+        ORDER BY sub.itmqty_bal DESC
+    """
+    rows = db.query_all(sql, tuple(params))
+    return JSONResponse(content=rows)
+
 
 
 # ── Customers APIs ───────────────────────────────────────────

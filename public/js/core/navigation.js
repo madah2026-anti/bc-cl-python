@@ -4,11 +4,12 @@
 
 export const sectionTitles = {
   home: 'الرئيسية',
-  purchases: 'المشتروات',
-  sales: 'المبيعات',
+  purchases: 'الموردين',
+  sales: 'العملاء',
   accounts: 'الحسابات',
   inventory: 'المخزون',
   customer_service: 'خدمة العملاء',
+  reports: 'مركز التقارير والإحصائيات',
   system: 'النظام',
 };
 

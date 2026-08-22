@@ -1,0 +1,219 @@
+<!-- ═══ Reports Section View ═══ -->
+<section class="section-panel" id="section-reports">
+  <!-- Category Tabs -->
+  <div class="category-tabs-container" id="categoryTabs">
+    <button class="category-tab-btn" data-cat="suppliers">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+      الموردين
+    </button>
+    <button class="category-tab-btn" data-cat="customers">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+      العملاء
+    </button>
+    <button class="category-tab-btn active" data-cat="sales">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="12" y1="1" x2="12" y2="23" />
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+      </svg>
+      المبيعات
+    </button>
+    <button class="category-tab-btn" data-cat="inventory">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path
+          d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+      </svg>
+      المخزون
+    </button>
+    <button class="category-tab-btn" data-cat="accounts">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+        <line x1="8" y1="21" x2="16" y2="21" />
+        <line x1="12" y1="17" x2="12" y2="21" />
+      </svg>
+      الحسابات
+    </button>
+    <button class="category-tab-btn" data-cat="purchases">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      </svg>
+      خدمة العملاء
+    </button>
+  </div>
+
+  <!-- Dual Split Section -->
+  <div class="reports-grid">
+    <!-- Right Panel: Reports Names List -->
+    <div class="reports-panel-card">
+      <div class="panel-header-toolbar">
+        <div class="panel-header-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          قائمة التقارير المتاحة
+        </div>
+        <div class="reports-search-box">
+          <input type="text" class="form-input" id="report-search-input" placeholder="تصفية أسماء التقارير...">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </div>
+      </div>
+
+      <div class="reports-list-body" id="list-report-names">
+        <!-- Report items populated dynamically -->
+      </div>
+
+      <div class="panel-footer-bar">
+        <span>التقرير المحدد: <strong id="selected-report-label" style="color: var(--accent-light);">لم يتم
+            التحديد</strong></span>
+        <span id="reports-count-badge" class="record-count">0 تقارير</span>
+      </div>
+    </div>
+
+    <!-- Left Panel: Custom Data Search List -->
+    <div class="reports-panel-card">
+      <div class="panel-header-toolbar">
+        <div class="panel-header-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+          </svg>
+          تحديد العنصر / تخصيص البيانات
+        </div>
+        <div class="reports-search-box">
+          <input type="text" class="form-input search-input" id="entity-search-input" placeholder="بحث في السجلات...">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </div>
+      </div>
+
+      <div class="reports-list-body" id="search-list">
+        <div class="empty-state-list">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          اختر تقريراً من القائمة للبدء بتصفية البيانات
+        </div>
+      </div>
+
+      <div class="panel-footer-bar">
+        <span>العنصر المحدد: <strong id="selected-entity-label" style="color: var(--success);">جميع
+            البيانات</strong></span>
+        <span id="search-list-count" class="record-count">العدد: 0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Date Period Controls Card -->
+  <div class="reports-controls-card">
+    <div class="controls-grid">
+      <div class="form-group" style="margin-bottom: 0;">
+        <label><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            style="vertical-align: middle; margin-left: 4px;">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg> الفترات الزمنية الجاهزة</label>
+        <select class="form-input" id="period-select">
+          <option value="none">بدون فترة محددة</option>
+          <option value="curr_day">اليوم الحالي</option>
+          <option value="prev_day">اليوم السابق</option>
+          <option value="next_day">اليوم التالي</option>
+          <option value="curr_month">الشهر الحالي</option>
+          <option value="prev_month">الشهر السابق</option>
+          <option value="q1">الربع الأول</option>
+          <option value="q2">الربع الثاني</option>
+          <option value="q3">الربع الثالث</option>
+          <option value="q4">الربع الرابع</option>
+          <option value="curr_year">العام الحالي</option>
+          <option value="prev_year">العام السابق</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>من تاريخ</label>
+        <input type="date" class="form-input" id="from-date">
+      </div>
+
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>إلى تاريخ</label>
+        <input type="date" class="form-input" id="to-date">
+      </div>
+    </div>
+
+    <div class="action-buttons-row">
+      <button class="btn-report-act btn-report-primary" id="btnPreviewReport">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+        معاينة التقرير
+      </button>
+
+      <button class="btn-report-act btn-report-success" id="btnPrintReport">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 6 2 18 2 18 9" />
+          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+          <rect x="6" y="14" width="12" height="8" />
+        </svg>
+        طباعة
+      </button>
+
+      <button class="btn-report-act btn-report-secondary" id="btnExportExcel">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        تصدير Excel
+      </button>
+
+      <button class="btn-report-act btn-report-secondary" id="btnResetReportFilters">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6" />
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+        </svg>
+        إعادة ضبط
+      </button>
+    </div>
+  </div>
+
+  <!-- Preview Modal -->
+  <div class="modal-overlay" id="reportPreviewModalOverlay">
+    <div class="modal" style="max-width: 850px;">
+      <div class="modal-header">
+        <h3 id="modalReportTitle">معاينة التقرير</h3>
+        <button class="modal-close" id="modalReportCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body" id="modalReportBody">
+        <!-- Preview Content -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn-report-act btn-report-success" id="modalPrintBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 6 2 18 2 18 9" />
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+            <rect x="6" y="14" width="12" height="8" />
+          </svg>
+          طباعة التقرير
+        </button>
+        <button class="btn-cancel" id="modalCloseFooterBtn">إغلاق</button>
+      </div>
+    </div>
+  </div>
+</section>

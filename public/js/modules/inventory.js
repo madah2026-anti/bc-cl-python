@@ -746,8 +746,25 @@ function addAdjItemRow(initialVal = null) {
     hiddenEl: { value: null },
     dropdownEl,
     portal: true,
-    getLocalData: filterItemsCache,
+    getLocalData: async (q) => {
+      const items = await filterItemsCache(q);
+      const usedIds = new Set(adjItemRows.filter(r => r.rowId !== rowId && r.item_id != null).map(r => String(r.item_id)));
+      return items.filter(i => !usedIds.has(String(i.item_id)));
+    },
     onSelect: (id, name) => {
+      const duplicate = adjItemRows.find(r => r.rowId !== rowId && String(r.item_id) === String(id));
+      if (duplicate) {
+        showToast(`الصنف (${name || id}) مضاف مسبقاً في المستند`, 'warning');
+        searchInput.value = '';
+        unitCell.textContent = '–';
+        const row = adjItemRows.find(r => r.rowId === rowId);
+        if (row) {
+          row.item_id = null;
+          row.item_name = '';
+          row.item_unit = '';
+        }
+        return;
+      }
       const cached = combo.getAllOptions().find(o => String(o.id) === String(id));
       const unit = cached ? (cached.unit || '–') : '–';
       unitCell.textContent = unit;
